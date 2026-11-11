@@ -1,121 +1,131 @@
 {% extends "base.html" %}
+{% block title %}Статистика — ЖКУ-Учёт{% endblock %}
 {% block content %}
-<h3>📊 Дашборд статистики</h3>
+<div class="page-head">
+    <div>
+        <h1 class="h3">Статистика</h1>
+        <p class="page-subtitle">Начисления и расход ресурсов по месяцам</p>
+    </div>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+</div>
 
-<!-- Фильтры -->
-<form method="get" action="{{ url_for('main.stats') }}" class="row g-3 mb-4">
-    <div class="col-md-4">
-        <label for="property_id" class="form-label">Объект</label>
-        <select name="property_id" id="property_id" class="form-select" onchange="this.form.submit()">
-            {% for p in properties %}
-                <option value="{{ p.id }}" {% if p.id == selected_property %}selected{% endif %}>
-                    {{ p.address }}
-                </option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="col-md-4">
-        <label for="months" class="form-label">Период</label>
-        <select name="months" id="months" class="form-select" onchange="this.form.submit()">
-            <option value="6" {% if selected_months == 6 %}selected{% endif %}>Последние 6 месяцев</option>
-            <option value="12" {% if selected_months == 12 %}selected{% endif %}>Последние 12 месяцев</option>
-            <option value="0" {% if selected_months == 0 %}selected{% endif %}>Всё время</option>
-        </select>
-    </div>
-    <div class="col-md-4 d-flex align-items-end">
-        <a href="{{ url_for('main.stats') }}" class="btn btn-secondary">Сбросить</a>
+<form method="get" action="{{ url_for('main.stats') }}" class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-5">
+                <label for="property_id" class="form-label">Объект</label>
+                <select name="property_id" id="property_id" class="form-select" onchange="this.form.submit()">
+                    <option value="0" {% if selected_property == 0 %}selected{% endif %}>Все доступные объекты</option>
+                    {% for p in properties %}
+                    <option value="{{ p.id }}" {% if p.id == selected_property %}selected{% endif %}>{{ p.address }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="months" class="form-label">Период</label>
+                <select name="months" id="months" class="form-select" onchange="this.form.submit()">
+                    <option value="6" {% if selected_months == 6 %}selected{% endif %}>Последние 6 месяцев</option>
+                    <option value="12" {% if selected_months == 12 %}selected{% endif %}>Последние 12 месяцев</option>
+                    <option value="0" {% if selected_months == 0 %}selected{% endif %}>Всё время</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-grid">
+                <a href="{{ url_for('main.stats') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>Сбросить</a>
+            </div>
+        </div>
     </div>
 </form>
 
-<!-- Карточки-сводки -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card text-white bg-primary">
-            <div class="card-body">
-                <h5 class="card-title">Всего начислено</h5>
-                <p class="card-text display-6">{{ "%.2f"|format(data.summary.total_sum) }} ₽</p>
-            </div>
-        </div>
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card stat-card bg-brand h-100"><div class="card-body">
+            <div class="stat-label">Всего начислено</div>
+            <div class="stat-value">{{ data.summary.total_sum|money }} ₽</div>
+        </div></div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-success">
-            <div class="card-body">
-                <h5 class="card-title">Среднее в месяц</h5>
-                <p class="card-text display-6">{{ "%.2f"|format(data.summary.avg_month) }} ₽</p>
-            </div>
-        </div>
+    <div class="col-6 col-lg-3">
+        <div class="card stat-card bg-accent h-100"><div class="card-body">
+            <div class="stat-label">Среднее в месяц</div>
+            <div class="stat-value">{{ data.summary.avg_month|money }} ₽</div>
+        </div></div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-info">
-            <div class="card-body">
-                <h5 class="card-title">Ср. расход воды (ГВ+ХВ)</h5>
-                <p class="card-text display-6">{{ "%.1f"|format(data.summary.avg_hot + data.summary.avg_cold) }} м³</p>
-            </div>
-        </div>
+    <div class="col-6 col-lg-3">
+        <div class="card stat-card bg-slate h-100"><div class="card-body">
+            <div class="stat-label">Средний расход воды</div>
+            <div class="stat-value">{{ (data.summary.avg_hot + data.summary.avg_cold)|quantity }} м³</div>
+        </div></div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-warning">
-            <div class="card-body">
-                <h5 class="card-title">Ср. расход эл-ва</h5>
-                <p class="card-text display-6">{{ "%.1f"|format(data.summary.avg_el) }} кВт·ч</p>
-            </div>
-        </div>
+    <div class="col-6 col-lg-3">
+        <div class="card stat-card bg-brand h-100"><div class="card-body">
+            <div class="stat-label">Средний расход эл-ва</div>
+            <div class="stat-value">{{ data.summary.avg_el|quantity }} кВт·ч</div>
+        </div></div>
     </div>
 </div>
 
-<!-- Графики -->
-<div class="row">
-    <div class="col-md-12 mb-4">
-        <div class="card">
-            <div class="card-header">Динамика начислений</div>
-            <div class="card-body">
-                <canvas id="totalsChart" height="100"></canvas>
-            </div>
+{% if data.labels %}
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card chart-card">
+            <div class="card-header"><i class="bi bi-graph-up me-1"></i>Динамика начислений</div>
+            <div class="card-body"><canvas id="totalsChart" height="110"></canvas></div>
         </div>
     </div>
-    <div class="col-md-6 mb-4">
-        <div class="card">
-            <div class="card-header">Расход воды по месяцам</div>
-            <div class="card-body">
-                <canvas id="waterChart" height="150"></canvas>
-            </div>
+    <div class="col-lg-6">
+        <div class="card chart-card">
+            <div class="card-header"><i class="bi bi-droplet-half me-1"></i>Расход воды</div>
+            <div class="card-body"><canvas id="waterChart" height="170"></canvas></div>
         </div>
     </div>
-    <div class="col-md-6 mb-4">
-        <div class="card">
-            <div class="card-header">Расход электроэнергии</div>
-            <div class="card-body">
-                <canvas id="elChart" height="150"></canvas>
-            </div>
+    <div class="col-lg-6">
+        <div class="card chart-card">
+            <div class="card-header"><i class="bi bi-lightning-charge me-1"></i>Расход электроэнергии</div>
+            <div class="card-body"><canvas id="elChart" height="170"></canvas></div>
         </div>
     </div>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% else %}
+<div class="card"><div class="card-body empty-state">
+    <i class="bi bi-bar-chart"></i>
+    <h3 class="h5 mt-3">Недостаточно данных</h3>
+    <p class="mb-0">Внесите показания, чтобы построить графики.</p>
+</div></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if data.labels %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-    const labels = {{ data.labels|tojson }};
+    const labels = {{ data.labels_display|tojson }};
     const totals = {{ data.totals|tojson }};
     const hot = {{ data.hot_water|tojson }};
     const cold = {{ data.cold_water|tojson }};
     const el = {{ data.electricity|tojson }};
+    const rub = value => new Intl.NumberFormat('ru-RU', {style: 'currency', currency: 'RUB', maximumFractionDigits: 2}).format(value);
+
+    Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
+    Chart.defaults.color = '#52606d';
 
     new Chart(document.getElementById('totalsChart'), {
         type: 'line',
         data: {
             labels: labels,
             datasets: [{
-                label: 'Сумма, руб',
+                label: 'Начислено, ₽',
                 data: totals,
-                borderColor: 'rgba(54, 162, 235, 1)',
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                tension: 0.1,
+                borderColor: '#1f4e79',
+                backgroundColor: 'rgba(47, 128, 192, 0.14)',
+                pointBackgroundColor: '#1f4e79',
+                pointRadius: 4,
+                tension: 0.25,
                 fill: true
             }]
         },
         options: {
             responsive: true,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, ticks: { callback: v => v + ' ₽' } } }
+            maintainAspectRatio: false,
+            plugins: { legend: {display: false}, tooltip: {callbacks: {label: ctx => rub(ctx.parsed.y)}} },
+            scales: {y: {beginAtZero: true, ticks: {callback: value => rub(value)}}}
         }
     });
 
@@ -124,26 +134,15 @@
         data: {
             labels: labels,
             datasets: [
-                {
-                    label: 'Горячая вода, м³',
-                    data: hot,
-                    backgroundColor: 'rgba(255, 99, 132, 0.6)',
-                    borderColor: 'rgba(255, 99, 132, 1)',
-                    borderWidth: 1
-                },
-                {
-                    label: 'Холодная вода, м³',
-                    data: cold,
-                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                }
+                {label: 'Горячая вода, м³', data: hot, backgroundColor: 'rgba(227, 93, 106, 0.72)', borderRadius: 5},
+                {label: 'Холодная вода, м³', data: cold, backgroundColor: 'rgba(47, 128, 192, 0.72)', borderRadius: 5}
             ]
         },
         options: {
             responsive: true,
-            plugins: { legend: { position: 'top' } },
-            scales: { y: { beginAtZero: true, ticks: { callback: v => v + ' м³' } } }
+            maintainAspectRatio: false,
+            plugins: {legend: {position: 'top'}},
+            scales: {y: {beginAtZero: true, title: {display: true, text: 'м³'}}}
         }
     });
 
@@ -151,19 +150,15 @@
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Электроэнергия, кВт·ч',
-                data: el,
-                backgroundColor: 'rgba(255, 159, 64, 0.6)',
-                borderColor: 'rgba(255, 159, 64, 1)',
-                borderWidth: 1
-            }]
+            datasets: [{label: 'Электроэнергия, кВт·ч', data: el, backgroundColor: 'rgba(243, 156, 18, 0.75)', borderRadius: 5}]
         },
         options: {
             responsive: true,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, ticks: { callback: v => v + ' кВт·ч' } } }
+            maintainAspectRatio: false,
+            plugins: {legend: {display: false}},
+            scales: {y: {beginAtZero: true, title: {display: true, text: 'кВт·ч'}}}
         }
     });
 </script>
+{% endif %}
 {% endblock %}

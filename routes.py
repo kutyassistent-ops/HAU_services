@@ -1,299 +1,461 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
-from flask_login import login_required, current_user
-from datetime import date, datetime
+"""Основные маршруты приложения."""
+from __future__ import annotations
+
+import csv
+import io
+from datetime import date
+
+from flask import (Blueprint, Response, abort, flash, jsonify, redirect,
+                   render_template, request, url_for)
+from flask_login import current_user, login_required
+
+from extensions import get_db
 from models import (
-    get_last_reading, get_property_tariffs, calculate_total,
-    get_debt, get_stats_data
+    add_tariff, assign_tenant, create_property, delete_reading,
+    get_all_tenants, get_dashboard_properties, get_invoice, get_invoice_details,
+    get_invoices, get_latest_tariff, get_property, get_property_report_rows,
+    get_property_tenants, get_stats_data, get_tariff_history,
+    get_user_debt_summary, get_user_properties, join_by_invite, leave_property,
+    mark_invoice_paid, mark_invoice_unpaid, regenerate_invite_code,
+    remove_tenant, save_reading, update_property_address,
+    user_can_access_property,
 )
-from extensions import get_db_connection
+from utils import role_required
 
-main_bp = Blueprint('main', __name__)
+main_bp = Blueprint("main", __name__)
 
-@main_bp.route('/')
+
+# ---------------------------------------------------------------------------
+# Дашборд
+# ---------------------------------------------------------------------------
+@main_bp.route("/")
 def home():
     if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard'))
-    return redirect(url_for('auth.login'))
+        return redirect(url_for("main.dashboard"))
+    return redirect(url_for("auth.login"))
 
-@main_bp.route('/dashboard')
+
+@main_bp.route("/dashboard")
 @login_required
 def dashboard():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    if current_user.role == 'owner':
-        cur.execute('SELECT id, address FROM properties WHERE owner_id = ?', (current_user.id,))
-        properties = cur.fetchall()
-        props_data = []
-        for prop in properties:
-            last = get_last_reading(prop['id'])
-            invoice = None
-            if last:
-                cur.execute('SELECT total FROM invoices WHERE property_id = ? AND reading_id = (SELECT id FROM meter_readings WHERE property_id = ? ORDER BY date DESC LIMIT 1)', (prop['id'], prop['id']))
-                inv = cur.fetchone()
-                if inv:
-                    invoice = inv['total']
-            debt = get_debt(prop['id'])
-            props_data.append({
-                'id': prop['id'],
-                'address': prop['address'],
-                'last_reading': last,
-                'last_invoice': invoice,
-                'debt': debt
-            })
-        conn.close()
-        return render_template('dashboard_owner.html', properties=props_data)
-    else:
-        cur.execute('''
-            SELECT p.id, p.address 
-            FROM properties p
-            JOIN tenant_properties tp ON p.id = tp.property_id
-            WHERE tp.tenant_id = ?
-        ''', (current_user.id,))
-        prop = cur.fetchone()
-        conn.close()
-        if prop:
-            last = get_last_reading(prop['id'])
-            invoice = None
-            if last:
-                conn2 = get_db_connection()
-                cur2 = conn2.cursor()
-                cur2.execute('SELECT total FROM invoices WHERE property_id = ? AND reading_id = (SELECT id FROM meter_readings WHERE property_id = ? ORDER BY date DESC LIMIT 1)', (prop['id'], prop['id']))
-                inv = cur2.fetchone()
-                conn2.close()
-                if inv:
-                    invoice = inv['total']
-            debt = get_debt(prop['id'])
-            return render_template('dashboard_tenant.html', property=prop, last_reading=last, last_invoice=invoice, debt=debt)
-        else:
-            flash('У вас нет привязанных объектов. Обратитесь к арендодателю.', 'warning')
-            return render_template('dashboard_tenant.html', property=None, debt=0)
+    properties = get_dashboard_properties(current_user)
+    summary = get_user_debt_summary(current_user)
+    total_last_invoice = sum(
+        (p["last_invoice_total"] or 0) for p in properties
+    )
+    return render_template(
+        "dashboard.html",
+        properties=properties,
+        summary=summary,
+        total_last_invoice=total_last_invoice,
+    )
 
-@main_bp.route('/add_property', methods=['GET', 'POST'])
-@login_required
+
+@main_bp.route("/healthz")
+def healthz():
+    get_db().execute("SELECT 1").fetchone()
+    return jsonify(status="ok")
+
+
+# ---------------------------------------------------------------------------
+# Объекты и тарифы
+# ---------------------------------------------------------------------------
+@main_bp.route("/properties/new", methods=["GET", "POST"])
+@role_required("owner")
 def add_property():
-    if current_user.role != 'owner':
-        flash('Только арендодатели могут добавлять объекты.', 'danger')
-        return redirect(url_for('main.dashboard'))
-    if request.method == 'POST':
-        address = request.form['address'].strip()
-        if not address:
-            flash('Адрес обязателен.', 'danger')
-            return render_template('add_property.html')
-        tariff_el = float(request.form.get('tariff_el', 2.73))
-        tariff_water = float(request.form.get('tariff_water', 31.21))
-        tariff_com1 = float(request.form.get('tariff_com1', 72.83))
-        tariff_com2 = float(request.form.get('tariff_com2', 21.95))
-        fixed_fee = float(request.form.get('fixed_fee', 17000))
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute('''
-            INSERT INTO properties (owner_id, address, tariff_el, tariff_water, tariff_com1, tariff_com2, fixed_fee)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (current_user.id, address, tariff_el, tariff_water, tariff_com1, tariff_com2, fixed_fee))
-        conn.commit()
-        conn.close()
-        flash('Объект добавлен.', 'success')
-        return redirect(url_for('main.dashboard'))
-    return render_template('add_property.html')
+    if request.method == "POST":
+        try:
+            property_id = create_property(
+                current_user.id,
+                request.form.get("address", ""),
+                request.form.get("effective_from") or date.today().isoformat(),
+                request.form,
+            )
+            get_db().commit()
+            flash("Объект добавлен. Тарифы сохранены.", "success")
+            return redirect(url_for("main.property_tariffs", property_id=property_id))
+        except ValueError as exc:
+            get_db().rollback()
+            flash(str(exc), "danger")
+            return render_template("property_form.html", mode="create"), 400
+    return render_template("property_form.html", mode="create")
 
-@main_bp.route('/edit_property/<int:property_id>', methods=['GET', 'POST'])
-@login_required
-def edit_property(property_id):
-    if current_user.role != 'owner':
-        flash('Только арендодатели могут редактировать объекты.', 'danger')
-        return redirect(url_for('main.dashboard'))
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM properties WHERE id = ? AND owner_id = ?', (property_id, current_user.id))
-    prop = cur.fetchone()
-    if not prop:
-        flash('Объект не найден или у вас нет доступа.', 'danger')
-        conn.close()
-        return redirect(url_for('main.dashboard'))
-    if request.method == 'POST':
-        address = request.form['address'].strip()
-        if not address:
-            flash('Адрес обязателен.', 'danger')
-            conn.close()
-            return render_template('edit_property.html', prop=prop)
-        tariff_el = float(request.form.get('tariff_el', 2.73))
-        tariff_water = float(request.form.get('tariff_water', 31.21))
-        tariff_com1 = float(request.form.get('tariff_com1', 72.83))
-        tariff_com2 = float(request.form.get('tariff_com2', 21.95))
-        fixed_fee = float(request.form.get('fixed_fee', 17000))
-        cur.execute('''
-            UPDATE properties
-            SET address = ?, tariff_el = ?, tariff_water = ?, tariff_com1 = ?, tariff_com2 = ?, fixed_fee = ?
-            WHERE id = ? AND owner_id = ?
-        ''', (address, tariff_el, tariff_water, tariff_com1, tariff_com2, fixed_fee, property_id, current_user.id))
-        conn.commit()
-        conn.close()
-        flash('Тарифы и адрес обновлены.', 'success')
-        return redirect(url_for('main.dashboard'))
-    conn.close()
-    return render_template('edit_property.html', prop=prop)
 
-@main_bp.route('/add_reading', methods=['GET', 'POST'])
+@main_bp.route("/properties/<int:property_id>/edit", methods=["GET", "POST"])
+@role_required("owner")
+def edit_property(property_id: int):
+    prop = get_property(property_id)
+    if not prop or prop["owner_id"] != current_user.id:
+        flash("Объект не найден или у вас нет доступа.", "danger")
+        return redirect(url_for("main.dashboard"))
+    if request.method == "POST":
+        try:
+            update_property_address(property_id, current_user.id,
+                                    request.form.get("address", ""))
+            get_db().commit()
+            flash("Адрес объекта обновлён.", "success")
+            return redirect(url_for("main.dashboard"))
+        except ValueError as exc:
+            get_db().rollback()
+            flash(str(exc), "danger")
+            return render_template("property_form.html", mode="edit", prop=prop), 400
+    return render_template("property_form.html", mode="edit", prop=prop)
+
+
+@main_bp.route("/properties/<int:property_id>/tariffs", methods=["GET", "POST"])
+@role_required("owner")
+def property_tariffs(property_id: int):
+    prop = get_property(property_id)
+    if not prop or prop["owner_id"] != current_user.id:
+        flash("Объект не найден или у вас нет доступа.", "danger")
+        return redirect(url_for("main.dashboard"))
+    if request.method == "POST":
+        try:
+            add_tariff(
+                property_id,
+                request.form.get("effective_from") or date.today().isoformat(),
+                request.form,
+                current_user.id,
+            )
+            get_db().commit()
+            flash("Новая версия тарифа сохранена. Она применяется к показаниям с указанной даты.", "success")
+            return redirect(url_for("main.property_tariffs", property_id=property_id))
+        except ValueError as exc:
+            get_db().rollback()
+            flash(str(exc), "danger")
+            return render_template(
+                "tariffs.html", prop=prop, tariffs=get_tariff_history(property_id),
+                tenants=get_property_tenants(property_id),
+            ), 400
+    return render_template(
+        "tariffs.html", prop=prop, tariffs=get_tariff_history(property_id),
+        tenants=get_property_tenants(property_id),
+    )
+
+
+@main_bp.route("/properties/<int:property_id>/invite", methods=["POST"])
+@role_required("owner")
+def regenerate_invite(property_id: int):
+    prop = get_property(property_id)
+    if not prop or prop["owner_id"] != current_user.id:
+        flash("Объект не найден или у вас нет доступа.", "danger")
+        return redirect(url_for("main.dashboard"))
+    code = regenerate_invite_code(property_id, current_user.id)
+    get_db().commit()
+    flash(f"Новый код приглашения: {code}", "success")
+    return redirect(url_for("main.property_tariffs", property_id=property_id))
+
+
+# ---------------------------------------------------------------------------
+# Арендаторы
+# ---------------------------------------------------------------------------
+@main_bp.route("/tenants")
+@role_required("owner")
+def tenants():
+    properties = get_user_properties(current_user)
+    rows = []
+    for prop in properties:
+        rows.append({
+            **prop,
+            "tenants": get_property_tenants(prop["id"]),
+        })
+    return render_template("tenants.html", properties=rows, all_tenants=get_all_tenants())
+
+
+@main_bp.route("/tenants/assign", methods=["POST"])
+@role_required("owner")
+def assign_tenant_route():
+    property_id = request.form.get("property_id", type=int)
+    username = request.form.get("username", "").strip()
+    try:
+        if not property_id:
+            raise ValueError("Выберите объект.")
+        tenant = assign_tenant(property_id, username, current_user.id)
+        get_db().commit()
+        flash(f"Арендатор {tenant['username']} привязан к объекту.", "success")
+    except ValueError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("main.tenants"))
+
+
+@main_bp.route("/tenants/<int:property_id>/<int:tenant_id>/remove", methods=["POST"])
+@role_required("owner")
+def remove_tenant_route(property_id: int, tenant_id: int):
+    try:
+        remove_tenant(property_id, tenant_id, current_user.id)
+        get_db().commit()
+        flash("Арендатор отвязан от объекта.", "success")
+    except ValueError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("main.tenants"))
+
+
+@main_bp.route("/join", methods=["GET", "POST"])
+@role_required("tenant")
+def join_property():
+    if request.method == "POST":
+        try:
+            prop = join_by_invite(current_user.id, request.form.get("invite_code", ""))
+            get_db().commit()
+            flash(f"Вы присоединены к объекту «{prop['address']}».", "success")
+            return redirect(url_for("main.dashboard"))
+        except ValueError as exc:
+            get_db().rollback()
+            flash(str(exc), "danger")
+            return render_template("join.html", properties=get_user_properties(current_user)), 400
+    return render_template("join.html", properties=get_user_properties(current_user))
+
+
+@main_bp.route("/leave/<int:property_id>", methods=["POST"])
+@role_required("tenant")
+def leave_property_route(property_id: int):
+    if not user_can_access_property(current_user, property_id):
+        flash("Объект не найден.", "danger")
+        return redirect(url_for("main.dashboard"))
+    leave_property(current_user.id, property_id)
+    get_db().commit()
+    flash("Вы отвязались от объекта.", "info")
+    return redirect(url_for("main.dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Показания
+# ---------------------------------------------------------------------------
+@main_bp.route("/readings/new", methods=["GET", "POST"])
 @login_required
 def add_reading():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    if current_user.role == 'owner':
-        cur.execute('SELECT id, address FROM properties WHERE owner_id = ?', (current_user.id,))
-        properties = cur.fetchall()
-    else:
-        cur.execute('''
-            SELECT p.id, p.address 
-            FROM properties p
-            JOIN tenant_properties tp ON p.id = tp.property_id
-            WHERE tp.tenant_id = ?
-        ''', (current_user.id,))
-        properties = cur.fetchall()
-    conn.close()
+    properties = get_user_properties(current_user)
     if not properties:
-        flash('У вас нет объектов для ввода показаний.', 'warning')
-        return redirect(url_for('main.dashboard'))
-    if request.method == 'POST':
-        property_id = int(request.form['property_id'])
-        if property_id not in [p['id'] for p in properties]:
-            flash('Нет доступа к этому объекту.', 'danger')
-            return render_template('add_reading.html', properties=properties)
+        flash("У вас нет доступных объектов для ввода показаний.", "warning")
+        return redirect(url_for("main.dashboard"))
+
+    selected = request.args.get("property_id", type=int) or properties[0]["id"]
+    if request.method == "POST":
+        property_id = request.form.get("property_id", type=int)
+        if property_id not in [p["id"] for p in properties]:
+            flash("Нет доступа к выбранному объекту.", "danger")
+            return render_template("reading_form.html", properties=properties,
+                                   selected=selected, mode="create"), 403
         try:
-            hot_water = int(request.form['hot_water'])
-            cool_water = int(request.form['cool_water'])
-            electricity = int(request.form['electricity'])
-            input_date = request.form.get('date', '').strip()
-            if input_date:
-                datetime.strptime(input_date, '%Y-%m-%d')
-                reading_date = input_date
-            else:
-                reading_date = date.today().isoformat()
-        except ValueError:
-            flash('Неверный формат данных (показания должны быть целыми числами, дата – YYYY-MM-DD).', 'danger')
-            return render_template('add_reading.html', properties=properties)
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute('SELECT id FROM meter_readings WHERE property_id = ? AND date = ?', (property_id, reading_date))
-        if cur.fetchone():
-            flash(f'Показания за {reading_date} уже введены для этого объекта.', 'warning')
-            conn.close()
-            return render_template('add_reading.html', properties=properties)
-        prev = get_last_reading(property_id)
-        if prev:
-            if hot_water < prev['hot_water'] or cool_water < prev['cool_water'] or electricity < prev['electricity']:
-                flash('Новые показания не могут быть меньше предыдущих.', 'danger')
-                conn.close()
-                return render_template('add_reading.html', properties=properties)
-        cur.execute('''
-            INSERT INTO meter_readings (property_id, user_id, date, hot_water, cool_water, electricity)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (property_id, current_user.id, reading_date, hot_water, cool_water, electricity))
-        reading_id = cur.lastrowid
-        tariffs = get_property_tariffs(property_id)
-        reading = {'hot_water': hot_water, 'cool_water': cool_water, 'electricity': electricity}
-        details = calculate_total(reading, prev, tariffs)
-        cur.execute('''
-            INSERT INTO invoices (property_id, reading_id, total, details)
-            VALUES (?, ?, ?, ?)
-        ''', (property_id, reading_id, details['total'], str(details)))
-        conn.commit()
-        conn.close()
-        flash('Показания сохранены, сумма рассчитана.', 'success')
-        return redirect(url_for('main.dashboard'))
-    return render_template('add_reading.html', properties=properties)
+            reading_id = save_reading(
+                property_id,
+                current_user.id,
+                request.form.get("reading_date") or date.today().isoformat(),
+                request.form,
+            )
+            get_db().commit()
+            invoice = get_db().execute(
+                "SELECT id FROM invoices WHERE reading_id = ?", (reading_id,)
+            ).fetchone()
+            flash("Показания сохранены, счёт рассчитан.", "success")
+            if invoice:
+                return redirect(url_for("main.invoice_detail", invoice_id=invoice["id"]))
+            return redirect(url_for("main.history", property_id=property_id))
+        except ValueError as exc:
+            get_db().rollback()
+            flash(str(exc), "danger")
+            return render_template("reading_form.html", properties=properties,
+                                   selected=property_id, mode="create"), 400
+    return render_template("reading_form.html", properties=properties,
+                           selected=selected, mode="create")
 
-@main_bp.route('/history/<int:property_id>')
+
+def _can_manage_reading(reading: dict) -> bool:
+    prop = get_property(reading["property_id"])
+    if not prop:
+        return False
+    if current_user.is_owner:
+        return prop["owner_id"] == current_user.id
+    return (reading["user_id"] == current_user.id
+            and user_can_access_property(current_user, reading["property_id"]))
+
+
+@main_bp.route("/readings/<int:reading_id>/edit", methods=["GET", "POST"])
 @login_required
-def history(property_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    if current_user.role == 'owner':
-        cur.execute('SELECT id FROM properties WHERE id = ? AND owner_id = ?', (property_id, current_user.id))
-    else:
-        cur.execute('''
-            SELECT p.id FROM properties p
-            JOIN tenant_properties tp ON p.id = tp.property_id
-            WHERE p.id = ? AND tp.tenant_id = ?
-        ''', (property_id, current_user.id))
-    if not cur.fetchone():
-        flash('Нет доступа к истории этого объекта.', 'danger')
-        conn.close()
-        return redirect(url_for('main.dashboard'))
-    cur.execute('''
-        SELECT r.date, r.hot_water, r.cool_water, r.electricity, i.total, i.id as invoice_id, i.paid, u.username as entered_by
-        FROM meter_readings r
-        JOIN invoices i ON r.id = i.reading_id
-        JOIN users u ON r.user_id = u.id
-        WHERE r.property_id = ?
-        ORDER BY r.date DESC
-    ''', (property_id,))
-    records = cur.fetchall()
-    conn.close()
-    return render_template('history.html', records=records, property_id=property_id, user_role=current_user.role)
+def edit_reading(reading_id: int):
+    reading = get_db().execute(
+        "SELECT * FROM meter_readings WHERE id = ?", (reading_id,)
+    ).fetchone()
+    if not reading:
+        abort(404)
+    reading = dict(reading)
+    if not _can_manage_reading(reading):
+        flash("Нет доступа к редактированию этого показания.", "danger")
+        return redirect(url_for("main.dashboard"))
+    prop = get_property(reading["property_id"])
+    if request.method == "POST":
+        try:
+            save_reading(
+                reading["property_id"],
+                reading["user_id"],
+                request.form.get("reading_date") or reading["reading_date"],
+                request.form,
+                reading_id=reading_id,
+            )
+            get_db().commit()
+            flash("Показание обновлено, счета пересчитаны.", "success")
+            return redirect(url_for("main.history", property_id=reading["property_id"]))
+        except ValueError as exc:
+            get_db().rollback()
+            flash(str(exc), "danger")
+            return render_template("reading_form.html", properties=[prop],
+                                   selected=reading["property_id"], mode="edit",
+                                   reading=reading), 400
+    return render_template("reading_form.html", properties=[prop],
+                           selected=reading["property_id"], mode="edit",
+                           reading=reading)
 
-@main_bp.route('/pay/<int:invoice_id>', methods=['POST'])
+
+@main_bp.route("/readings/<int:reading_id>/delete", methods=["POST"])
 @login_required
-def mark_paid(invoice_id):
-    # Только владелец может подтверждать оплату
-    if current_user.role != 'owner':
-        flash('Только арендодатель может подтверждать оплату.', 'danger')
-        return redirect(url_for('main.dashboard'))
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        SELECT i.property_id, p.owner_id
-        FROM invoices i
-        JOIN properties p ON i.property_id = p.id
-        WHERE i.id = ?
-    ''', (invoice_id,))
-    row = cur.fetchone()
-    if not row:
-        flash('Счёт не найден.', 'danger')
-        conn.close()
-        return redirect(url_for('main.dashboard'))
-    
-    property_id = row['property_id']
-    owner_id = row['owner_id']
-    
-    if current_user.id != owner_id:
-        flash('Вы не являетесь владельцем этого объекта.', 'danger')
-        conn.close()
-        return redirect(url_for('main.dashboard'))
-    
-    cur.execute('UPDATE invoices SET paid = 1 WHERE id = ?', (invoice_id,))
-    conn.commit()
-    conn.close()
-    flash('Счёт отмечен как оплаченный.', 'success')
-    return redirect(url_for('main.history', property_id=property_id))
+def delete_reading_route(reading_id: int):
+    try:
+        reading = get_db().execute(
+            "SELECT * FROM meter_readings WHERE id = ?", (reading_id,)
+        ).fetchone()
+        if not reading:
+            raise ValueError("Показание не найдено.")
+        reading = dict(reading)
+        if not _can_manage_reading(reading):
+            raise PermissionError("Нет доступа к удалению этого показания.")
+        property_id = delete_reading(reading_id, current_user.id)
+        get_db().commit()
+        flash("Показание удалено, счета пересчитаны.", "success")
+        return redirect(url_for("main.history", property_id=property_id))
+    except PermissionError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("main.dashboard"))
+    except ValueError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("main.dashboard"))
 
-@main_bp.route('/stats')
+
+# ---------------------------------------------------------------------------
+# История, счета, оплата
+# ---------------------------------------------------------------------------
+def _get_accessible_property_or_404(property_id: int) -> dict:
+    prop = get_property(property_id)
+    if not prop or not user_can_access_property(current_user, property_id):
+        abort(404)
+    return prop
+
+
+@main_bp.route("/properties/<int:property_id>/history")
+@login_required
+def history(property_id: int):
+    prop = _get_accessible_property_or_404(property_id)
+    page = request.args.get("page", 1, type=int)
+    invoices = get_invoices(property_id, page=page)
+    return render_template(
+        "history.html",
+        prop=prop,
+        invoices=invoices,
+        tariff=get_latest_tariff(property_id),
+    )
+
+
+@main_bp.route("/properties/<int:property_id>/history.csv")
+@login_required
+def history_csv(property_id: int):
+    prop = _get_accessible_property_or_404(property_id)
+    rows = get_property_report_rows(property_id)
+    output = io.StringIO()
+    output.write("\ufeff")
+    writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
+    writer.writerow([
+        "Дата", "ГВ, м3", "ХВ, м3", "Электроэнергия, кВт·ч",
+        "Расход ГВ, м3", "Расход ХВ, м3", "Расход эл-ва, кВт·ч",
+        "Сумма, руб.", "Оплачено", "Дата оплаты", "Внёс",
+    ])
+    for row in rows:
+        writer.writerow([
+            row["reading_date"], row["hot_water"], row["cool_water"],
+            row["electricity"], row["consumption_hot"],
+            row["consumption_cold"], row["consumption_el"],
+            f"{row['total']:.2f}" if row["total"] is not None else "",
+            "Да" if row["paid"] else "Нет",
+            row["paid_at"] or "",
+            row["entered_by"],
+        ])
+    filename = f"history_property_{property_id}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@main_bp.route("/invoices/<int:invoice_id>")
+@login_required
+def invoice_detail(invoice_id: int):
+    invoice = get_invoice(invoice_id)
+    if not invoice or not user_can_access_property(current_user, invoice["property_id"]):
+        abort(404)
+    return render_template(
+        "invoice_detail.html",
+        invoice=invoice,
+        details=get_invoice_details(invoice),
+        can_pay=current_user.is_owner and invoice["owner_id"] == current_user.id,
+    )
+
+
+@main_bp.route("/invoices/<int:invoice_id>/pay", methods=["POST"])
+@role_required("owner")
+def pay_invoice(invoice_id: int):
+    try:
+        invoice = mark_invoice_paid(invoice_id, current_user.id)
+        get_db().commit()
+        flash("Счёт отмечен как оплаченный.", "success")
+        return redirect(url_for("main.invoice_detail", invoice_id=invoice_id))
+    except PermissionError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("main.dashboard"))
+    except ValueError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("main.dashboard"))
+
+
+@main_bp.route("/invoices/<int:invoice_id>/unpay", methods=["POST"])
+@role_required("owner")
+def unpay_invoice(invoice_id: int):
+    try:
+        mark_invoice_unpaid(invoice_id, current_user.id)
+        get_db().commit()
+        flash("Оплата счёта отменена.", "info")
+        return redirect(url_for("main.invoice_detail", invoice_id=invoice_id))
+    except (PermissionError, ValueError) as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("main.dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Статистика
+# ---------------------------------------------------------------------------
+@main_bp.route("/stats")
 @login_required
 def stats():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    if current_user.role == 'owner':
-        cur.execute('SELECT id, address FROM properties WHERE owner_id = ?', (current_user.id,))
-        properties = cur.fetchall()
-    else:
-        cur.execute('''
-            SELECT p.id, p.address 
-            FROM properties p
-            JOIN tenant_properties tp ON p.id = tp.property_id
-            WHERE tp.tenant_id = ?
-        ''', (current_user.id,))
-        properties = cur.fetchall()
-    conn.close()
+    properties = get_user_properties(current_user)
     if not properties:
-        flash('У вас нет объектов для просмотра статистики.', 'warning')
-        return redirect(url_for('main.dashboard'))
-    property_id = request.args.get('property_id', type=int, default=properties[0]['id'])
-    months_back = request.args.get('months', type=int, default=6)
-    if property_id not in [p['id'] for p in properties]:
-        property_id = properties[0]['id']
-    data = get_stats_data(property_id, months_back)
-    return render_template('stats.html',
-                           properties=properties,
-                           selected_property=property_id,
-                           selected_months=months_back,
-                           data=data)
+        flash("У вас нет объектов для просмотра статистики.", "warning")
+        return redirect(url_for("main.dashboard"))
+    property_id = request.args.get("property_id", 0, type=int)
+    if property_id and property_id not in [p["id"] for p in properties]:
+        property_id = 0
+    months = request.args.get("months", 6, type=int)
+    if months not in (0, 6, 12):
+        months = 6
+    data = get_stats_data(current_user, property_id, months)
+    return render_template(
+        "stats.html",
+        properties=properties,
+        selected_property=property_id,
+        selected_months=months,
+        data=data,
+    )

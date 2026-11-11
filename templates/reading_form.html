@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Ввод показаний' if mode == 'create' else 'Редактирование показания' }} — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="h3">{{ 'Ввод показаний' if mode == 'create' else 'Редактирование показания' }}</h1>
+        <p class="page-subtitle">Система проверит значения, рассчитает расход и сформирует счёт</p>
+    </div>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-body p-4">
+                <form method="post" novalidate>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="row">
+                        <div class="col-md-7 mb-3">
+                            <label for="property_id" class="form-label">Объект</label>
+                            {% if mode == 'edit' %}
+                            <input type="text" class="form-control" value="{{ properties[0].address }}" disabled>
+                            <input type="hidden" name="property_id" value="{{ properties[0].id }}">
+                            {% else %}
+                            <select class="form-select" id="property_id" name="property_id" required>
+                                {% for p in properties %}
+                                <option value="{{ p.id }}" {% if p.id == selected %}selected{% endif %}>{{ p.address }}</option>
+                                {% endfor %}
+                            </select>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-5 mb-3">
+                            <label for="reading_date" class="form-label">Дата показаний</label>
+                            <input type="date" class="form-control" id="reading_date" name="reading_date"
+                                   value="{{ request.form.get('reading_date', reading.reading_date if reading else today_iso) }}" required>
+                        </div>
+                    </div>
+
+                    <hr class="my-3">
+                    <h2 class="h6 text-uppercase text-muted mb-3">Текущие показания</h2>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="hot_water" class="form-label">Горячая вода, м³</label>
+                            <input type="number" step="0.001" min="0" class="form-control" id="hot_water" name="hot_water"
+                                   value="{{ request.form.get('hot_water', reading.hot_water if reading else '') }}" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="cool_water" class="form-label">Холодная вода, м³</label>
+                            <input type="number" step="0.001" min="0" class="form-control" id="cool_water" name="cool_water"
+                                   value="{{ request.form.get('cool_water', reading.cool_water if reading else '') }}" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="electricity" class="form-label">Электроэнергия, кВт·ч</label>
+                            <input type="number" step="0.001" min="0" class="form-control" id="electricity" name="electricity"
+                                   value="{{ request.form.get('electricity', reading.electricity if reading else '') }}" required>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info small d-flex gap-2">
+                        <i class="bi bi-info-circle"></i>
+                        <div>Показания не могут быть меньше предыдущих, а за одну дату допускается только одна запись. При редактировании счета объекта пересчитываются автоматически.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-calculator me-1"></i>
+                        {{ 'Сохранить и рассчитать' if mode == 'create' else 'Сохранить и пересчитать' }}
+                    </button>
+                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">Отмена</a>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-receipt me-1"></i>Как считается счёт</div>
+            <div class="card-body small">
+                <p>Расход = текущее показание − предыдущее.</p>
+                <ul class="mb-2">
+                    <li>электроэнергия × тариф на электроэнергию;</li>
+                    <li>горячая и холодная вода × тариф на воду;</li>
+                    <li>водоотведение ХВ × тариф com1;</li>
+                    <li>водоотведение общее × тариф com2;</li>
+                    <li>плюс фиксированная плата.</li>
+                </ul>
+                <p class="mb-0 text-muted">Тариф выбирается по дате показания из истории тарифов объекта.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

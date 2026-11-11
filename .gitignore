@@ -1,23 +1,43 @@
-# База данных с персональными данными — не в git
-*.db
-*.db-journal
-*.sqlite
-*.sqlite3
-billing.db
-
 # Python
 __pycache__/
 *.py[cod]
-*.egg-info/
+*.pyo
+*.pyd
 .venv/
 venv/
 env/
+.eggs/
+*.egg-info/
 
-# Окружение
+# Flask и локальные данные
+instance/*
+!instance/.gitkeep
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+
+# Тесты и покрытие
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage_html/
+test_report_*.txt
+
+# Переменные окружения и секреты
 .env
+.env.*
+!.env.example
 
-# IDE / OS
-.idea/
+# IDE и ОС
 .vscode/
+.idea/
+*.swp
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Временные файлы
+*.tmp

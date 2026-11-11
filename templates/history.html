@@ -1,51 +1,100 @@
 {% extends "base.html" %}
+{% block title %}История — {{ prop.address }}{% endblock %}
 {% block content %}
-<h3>История начислений</h3>
-{% if records %}
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th>Дата</th>
-            <th>ГВ</th>
-            <th>ХВ</th>
-            <th>Эл</th>
-            <th>Итого (руб)</th>
-            <th>Статус</th>
-            <th>Кто внёс</th>
-            <th>Действие</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for r in records %}
-        <tr>
-            <td>{{ r.date }}</td>
-            <td>{{ r.hot_water }}</td>
-            <td>{{ r.cool_water }}</td>
-            <td>{{ r.electricity }}</td>
-            <td>{{ "%.2f"|format(r.total) }}</td>
-            <td>
-                {% if r.paid %}
-                    <span class="badge bg-success">Оплачено</span>
-                {% else %}
-                    <span class="badge bg-danger">Не оплачено</span>
-                {% endif %}
-            </td>
-            <td>{{ r.entered_by }}</td>
-            <td>
-                {% if user_role == 'owner' and not r.paid %}
-                    <form method="post" action="{{ url_for('main.mark_paid', invoice_id=r.invoice_id) }}" style="display:inline;">
-                        <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Подтвердить оплату этого счёта?')">✅ Оплачено</button>
-                    </form>
-                {% else %}
-                    <span class="text-muted">—</span>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p class="text-muted">Нет записей для этого объекта.</p>
+<div class="page-head">
+    <div>
+        <h1 class="h3">{{ prop.address }}</h1>
+        <p class="page-subtitle">История показаний и начислений · всего записей: {{ invoices['total'] }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('main.add_reading', property_id=prop.id) }}" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Внести показания</a>
+        <a href="{{ url_for('main.history_csv', property_id=prop.id) }}" class="btn btn-outline-success"><i class="bi bi-filetype-csv me-1"></i>Экспорт CSV</a>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+    </div>
+</div>
+
+{% if tariff %}
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <div class="d-flex flex-wrap gap-3 align-items-center small">
+            <span class="text-muted"><i class="bi bi-cash-stack me-1"></i>Действующий тариф с {{ tariff.effective_from }}:</span>
+            <span>эл. {{ tariff.tariff_el|money }} ₽/кВт·ч</span>
+            <span>вода {{ tariff.tariff_water|money }} ₽/м³</span>
+            <span>водоотв. ХВ {{ tariff.tariff_com1|money }} ₽/м³</span>
+            <span>водоотв. общ. {{ tariff.tariff_com2|money }} ₽/м³</span>
+            <span>фикс. {{ tariff.fixed_fee|money }} ₽</span>
+        </div>
+    </div>
+</div>
 {% endif %}
-<a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Назад</a>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 table-responsive-stack">
+            <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>ГВ, м³</th>
+                    <th>ХВ, м³</th>
+                    <th>Эл., кВт·ч</th>
+                    <th>Сумма</th>
+                    <th>Статус</th>
+                    <th>Кто внёс</th>
+                    <th class="text-end">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in invoices['items'] %}
+                <tr>
+                    <td data-label="Дата">{{ r.reading_date }}</td>
+                    <td data-label="ГВ">{{ r.hot_water|quantity }}</td>
+                    <td data-label="ХВ">{{ r.cool_water|quantity }}</td>
+                    <td data-label="Эл.">{{ r.electricity|quantity }}</td>
+                    <td data-label="Сумма" class="fw-semibold">{{ r.total|money }} ₽</td>
+                    <td data-label="Статус">
+                        {% if r.paid %}
+                        <span class="badge bg-success">Оплачено</span>
+                        {% if r.paid_at %}<div class="small text-muted">{{ r.paid_at[:16] }}</div>{% endif %}
+                        {% else %}
+                        <span class="badge bg-danger">Не оплачено</span>
+                        {% endif %}
+                    </td>
+                    <td data-label="Кто внёс">{{ r.entered_by }}</td>
+                    <td data-label="Действия" class="text-end text-nowrap">
+                        <a href="{{ url_for('main.invoice_detail', invoice_id=r.id) }}" class="btn btn-outline-primary btn-sm" title="Детали расчёта"><i class="bi bi-receipt"></i></a>
+                        {% if current_user.is_owner or r.user_id == current_user.id %}
+                        <a href="{{ url_for('main.edit_reading', reading_id=r.reading_id) }}" class="btn btn-outline-secondary btn-sm" title="Изменить показание"><i class="bi bi-pencil"></i></a>
+                        <form method="post" action="{{ url_for('main.delete_reading_route', reading_id=r.reading_id) }}" class="d-inline"
+                              onsubmit="return confirm('Удалить показание и пересчитать счета?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Удалить"><i class="bi bi-trash"></i></button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8"><div class="empty-state"><i class="bi bi-inbox"></i><p class="mt-3 mb-0">Пока нет ни одной записи. Внесите первые показания.</p></div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if invoices['pages'] > 1 %}
+<nav class="mt-4" aria-label="Постраничная навигация">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {{ 'disabled' if invoices['page'] <= 1 }}">
+            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=invoices['page']-1) }}">Назад</a>
+        </li>
+        {% for p in range(1, invoices['pages'] + 1) %}
+        <li class="page-item {{ 'active' if p == invoices['page'] }}">
+            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=p) }}">{{ p }}</a>
+        </li>
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if invoices['page'] >= invoices['pages'] }}">
+            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=invoices['page']+1) }}">Вперёд</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
 {% endblock %}

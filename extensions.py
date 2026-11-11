@@ -1,13 +1,33 @@
-from flask_login import LoginManager
-from config import Config
+"""Расширения Flask и единая точка доступа к SQLite."""
 import sqlite3
 
-login_manager = LoginManager()
-login_manager.login_view = 'auth.login'   # имя blueprint + точка
-login_manager.login_message = 'Пожалуйста, войдите, чтобы продолжить.'
+from flask import current_app, g
+from flask_login import LoginManager
+from flask_wtf.csrf import CSRFProtect
 
-def get_db_connection():
-    """Возвращает соединение с БД с row_factory = sqlite3.Row."""
-    conn = sqlite3.connect(Config.DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+login_manager = LoginManager()
+login_manager.login_view = "auth.login"
+login_manager.login_message = "Пожалуйста, войдите, чтобы продолжить."
+login_manager.login_message_category = "warning"
+
+csrf = CSRFProtect()
+
+
+def get_db() -> sqlite3.Connection:
+    """Соединение с БД в рамках текущего запроса/контекста приложения."""
+    if "db" not in g:
+        g.db = sqlite3.connect(current_app.config["DATABASE"])
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db.execute("PRAGMA journal_mode = WAL")
+    return g.db
+
+
+def close_db(exception=None) -> None:  # noqa: ARG001
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_app(app) -> None:
+    app.teardown_appcontext(close_db)

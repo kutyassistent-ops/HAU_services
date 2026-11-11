@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Профиль — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="h3">Профиль</h1>
+        <p class="page-subtitle">Личные данные и безопасность аккаунта</p>
+    </div>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-person me-1"></i>Личные данные</div>
+            <div class="card-body">
+                <form method="post" novalidate>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label class="form-label">Имя пользователя</label>
+                        <input type="text" class="form-control" value="{{ current_user.username }}" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Роль</label>
+                        <input type="text" class="form-control" value="{{ 'Арендодатель' if current_user.is_owner else 'Арендатор' }}" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label for="full_name" class="form-label">Полное имя</label>
+                        <input type="text" class="form-control" id="full_name" name="full_name" maxlength="150"
+                               value="{{ request.form.get('full_name', current_user.full_name) }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" maxlength="150"
+                               value="{{ request.form.get('email', current_user.email) }}">
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Сохранить</button>
+                    <a href="{{ url_for('auth.change_password') }}" class="btn btn-outline-secondary">Сменить пароль</a>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-shield-check me-1"></i>Безопасность</div>
+            <div class="card-body small text-muted">
+                <p>Пароль хранится в виде bcrypt-хеша с индивидуальной солью и не может быть восстановлен в открытом виде.</p>
+                <p>Все изменяющие запросы защищены CSRF-токеном, а доступ к объектам проверяется по роли и владельцу.</p>
+                <p class="mb-0">Дата регистрации: {{ current_user.created_at or '—' }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

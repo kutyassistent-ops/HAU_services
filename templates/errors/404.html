@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Страница не найдена — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="card auth-card">
+    <div class="card-body empty-state">
+        <i class="bi bi-signpost-split"></i>
+        <h1 class="h3 mt-3">404 · Страница не найдена</h1>
+        <p>Возможно, объект удалён или ссылка устарела.</p>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">На главную</a>
+    </div>
+</div>
+{% endblock %}

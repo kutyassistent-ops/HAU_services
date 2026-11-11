@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Ошибка сервера — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="card auth-card">
+    <div class="card-body empty-state">
+        <i class="bi bi-exclamation-octagon"></i>
+        <h1 class="h3 mt-3">500 · Внутренняя ошибка</h1>
+        <p>Что-то пошло не так. Попробуйте обновить страницу позже.</p>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">На главную</a>
+    </div>
+</div>
+{% endblock %}

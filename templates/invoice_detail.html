@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Счёт от {{ invoice.reading_date }} — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="h3">Счёт от {{ invoice.reading_date }}</h1>
+        <p class="page-subtitle">{{ invoice.address }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('main.history', property_id=invoice.property_id) }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>К истории</a>
+        {% if can_pay and not invoice.paid %}
+        <form method="post" action="{{ url_for('main.pay_invoice', invoice_id=invoice.id) }}"
+              onsubmit="return confirm('Подтвердить оплату счёта?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-success"><i class="bi bi-check2-circle me-1"></i>Отметить оплаченным</button>
+        </form>
+        {% elif can_pay and invoice.paid %}
+        <form method="post" action="{{ url_for('main.unpay_invoice', invoice_id=invoice.id) }}"
+              onsubmit="return confirm('Отменить оплату счёта?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise me-1"></i>Отменить оплату</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-receipt me-1"></i>Детализация расчёта</div>
+            <div class="card-body">
+                {% if details %}
+                <h2 class="h6 text-uppercase text-muted">Показания и расход</h2>
+                <div class="table-responsive mb-4">
+                    <table class="table table-sm align-middle">
+                        <thead><tr><th>Ресурс</th><th class="text-end">Предыдущее</th><th class="text-end">Текущее</th><th class="text-end">Расход</th></tr></thead>
+                        <tbody>
+                            <tr><td>Горячая вода, м³</td><td class="text-end">{{ details.previous.hot_water|quantity }}</td><td class="text-end">{{ details.reading.hot_water|quantity }}</td><td class="text-end fw-semibold">{{ details.consumption.hot_water|quantity }}</td></tr>
+                            <tr><td>Холодная вода, м³</td><td class="text-end">{{ details.previous.cool_water|quantity }}</td><td class="text-end">{{ details.reading.cool_water|quantity }}</td><td class="text-end fw-semibold">{{ details.consumption.cool_water|quantity }}</td></tr>
+                            <tr><td>Электроэнергия, кВт·ч</td><td class="text-end">{{ details.previous.electricity|quantity }}</td><td class="text-end">{{ details.reading.electricity|quantity }}</td><td class="text-end fw-semibold">{{ details.consumption.electricity|quantity }}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h2 class="h6 text-uppercase text-muted">Начисления</h2>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle breakdown-table">
+                        <thead><tr><th>Составляющая</th><th>Расчёт</th><th class="text-end">Сумма</th></tr></thead>
+                        <tbody>
+                            <tr><td>Электроэнергия</td><td class="text-muted">{{ details.consumption.electricity|quantity }} × {{ details.rates.tariff_el|money }}</td><td>{{ details.components.electricity|money }} ₽</td></tr>
+                            <tr><td>Горячая вода</td><td class="text-muted">{{ details.consumption.hot_water|quantity }} × {{ details.rates.tariff_water|money }}</td><td>{{ details.components.hot_water|money }} ₽</td></tr>
+                            <tr><td>Холодная вода</td><td class="text-muted">{{ details.consumption.cool_water|quantity }} × {{ details.rates.tariff_water|money }}</td><td>{{ details.components.cold_water|money }} ₽</td></tr>
+                            <tr><td>Водоотведение ХВ</td><td class="text-muted">{{ details.consumption.cool_water|quantity }} × {{ details.rates.tariff_com1|money }}</td><td>{{ details.components.wastewater_cold|money }} ₽</td></tr>
+                            <tr><td>Водоотведение общее</td><td class="text-muted">({{ details.consumption.cool_water|quantity }} + {{ details.consumption.hot_water|quantity }}) × {{ details.rates.tariff_com2|money }}</td><td>{{ details.components.wastewater_total|money }} ₽</td></tr>
+                            <tr><td>Фиксированная плата</td><td class="text-muted">ежемесячно</td><td>{{ details.components.fixed_fee|money }} ₽</td></tr>
+                            <tr class="total-row"><td colspan="2">Итого к оплате</td><td>{{ invoice.total|money }} ₽</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% if details.tariff_effective_from %}
+                <p class="small text-muted mb-0 mt-2"><i class="bi bi-info-circle me-1"></i>Применён тариф, действующий с {{ details.tariff_effective_from }}.</p>
+                {% endif %}
+                {% else %}
+                <p class="text-muted">Детализация недоступна.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-info-circle me-1"></i>Статус счёта</div>
+            <div class="card-body">
+                <p class="mb-2">
+                    {% if invoice.paid %}
+                    <span class="badge bg-success fs-6">Оплачено</span>
+                    {% else %}
+                    <span class="badge bg-danger fs-6">Не оплачено</span>
+                    {% endif %}
+                </p>
+                <p class="mb-1"><span class="text-muted">Сумма:</span> <strong>{{ invoice.total|money }} ₽</strong></p>
+                {% if invoice.paid_at %}
+                <p class="mb-1"><span class="text-muted">Дата оплаты:</span> {{ invoice.paid_at[:16] }}</p>
+                <p class="mb-0"><span class="text-muted">Подтвердил:</span> {{ invoice.paid_by_name or invoice.paid_by_username or '—' }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><i class="bi bi-person me-1"></i>Показание внёс</div>
+            <div class="card-body">
+                <p class="mb-0">{{ invoice.entered_by }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

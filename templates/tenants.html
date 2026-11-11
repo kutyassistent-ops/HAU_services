@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Арендаторы — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="h3">Арендаторы</h1>
+        <p class="page-subtitle">Привязка арендаторов к объектам и коды приглашения</p>
+    </div>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-person-plus me-1"></i>Привязать арендатора</div>
+            <div class="card-body">
+                {% if properties %}
+                <form method="post" action="{{ url_for('main.assign_tenant_route') }}" novalidate>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label for="property_id" class="form-label">Объект</label>
+                        <select class="form-select" id="property_id" name="property_id" required>
+                            {% for p in properties %}
+                            <option value="{{ p.id }}">{{ p.address }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Имя пользователя арендатора</label>
+                        <input type="text" class="form-control" id="username" name="username" list="tenantList"
+                               placeholder="Например, tenant1" required>
+                        <datalist id="tenantList">
+                            {% for t in all_tenants %}
+                            <option value="{{ t.username }}">{{ t.full_name or t.username }}</option>
+                            {% endfor %}
+                        </datalist>
+                        <div class="form-text">Арендатор должен быть зарегистрирован с ролью «Арендатор».</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-link-45deg me-1"></i>Привязать</button>
+                </form>
+                {% else %}
+                <p class="text-muted mb-0">Сначала создайте хотя бы один объект.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        {% if properties %}
+        <div class="row g-3">
+            {% for p in properties %}
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                            <div>
+                                <div class="property-address"><i class="bi bi-geo-alt me-1"></i>{{ p.address }}</div>
+                                <div class="small text-muted mt-1">Код приглашения: <span class="invite-code">{{ p.invite_code }}</span></div>
+                            </div>
+                            <a href="{{ url_for('main.property_tariffs', property_id=p.id) }}" class="btn btn-outline-primary btn-sm">Тарифы</a>
+                        </div>
+                        <hr>
+                        {% if p.tenants %}
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead><tr><th>Арендатор</th><th>Логин</th><th>Привязан</th><th></th></tr></thead>
+                                <tbody>
+                                    {% for t in p.tenants %}
+                                    <tr>
+                                        <td>{{ t.full_name or '—' }}</td>
+                                        <td>{{ t.username }}</td>
+                                        <td class="text-muted small">{{ t.assigned_at }}</td>
+                                        <td class="text-end">
+                                            <form method="post" action="{{ url_for('main.remove_tenant_route', property_id=p.id, tenant_id=t.id) }}"
+                                                  onsubmit="return confirm('Отвязать арендатора от объекта?');">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-x-lg"></i></button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0"><i class="bi bi-info-circle me-1"></i>Арендаторы не привязаны. Передайте код приглашения или привяжите вручную.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="card"><div class="card-body empty-state"><i class="bi bi-people"></i><p class="mt-3">Нет объектов для управления арендаторами.</p></div></div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

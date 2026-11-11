@@ -1,11 +1,22 @@
 import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
 
 
 class Config:
-    # Ключ подписи сессий Flask.
-    # Значение по умолчанию — только для локального запуска и демо.
-    # В продакшене задавайте SECRET_KEY через переменную окружения.
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
+    """Базовая конфигурация. Значения можно переопределить переменными окружения."""
 
-    # Файл базы данных. Создаётся автоматически при первом запуске.
-    DB_PATH = os.environ.get('DB_PATH', 'billing.db')
+    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-secret-key-change-me")
+    DATABASE = os.environ.get(
+        "DATABASE_PATH", str(BASE_DIR / "instance" / "utility_billing.db")
+    )
+    HOST = os.environ.get("FLASK_HOST", "0.0.0.0")
+    PORT = int(os.environ.get("FLASK_PORT", "5000"))
+    MAX_CONTENT_LENGTH = 2 * 1024 * 1024
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    REMEMBER_COOKIE_HTTPONLY = True
+    WTF_CSRF_TIME_LIMIT = None
+    LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+    LOG_FILE = os.environ.get("LOG_FILE", str(BASE_DIR / "instance" / "app.log"))

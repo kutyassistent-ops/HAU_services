@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Тарифы — {{ prop.address }}{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="h3">{{ prop.address }}</h1>
+        <p class="page-subtitle">История тарифов и код приглашения для арендаторов</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('main.history', property_id=prop.id) }}" class="btn btn-outline-secondary"><i class="bi bi-clock-history me-1"></i>История</a>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-cash-stack me-1"></i>Действующие тарифы</div>
+            <div class="card-body">
+                {% if tariffs %}
+                {% set current = tariffs[0] %}
+                <div class="row g-3">
+                    <div class="col-6 col-md-4"><div class="text-muted small">Электроэнергия</div><div class="fw-semibold">{{ current.tariff_el|money }} ₽/кВт·ч</div></div>
+                    <div class="col-6 col-md-4"><div class="text-muted small">Вода</div><div class="fw-semibold">{{ current.tariff_water|money }} ₽/м³</div></div>
+                    <div class="col-6 col-md-4"><div class="text-muted small">Водоотведение ХВ</div><div class="fw-semibold">{{ current.tariff_com1|money }} ₽/м³</div></div>
+                    <div class="col-6 col-md-4"><div class="text-muted small">Водоотведение общее</div><div class="fw-semibold">{{ current.tariff_com2|money }} ₽/м³</div></div>
+                    <div class="col-6 col-md-4"><div class="text-muted small">Фиксированная плата</div><div class="fw-semibold">{{ current.fixed_fee|money }} ₽</div></div>
+                    <div class="col-6 col-md-4"><div class="text-muted small">Действуют с</div><div class="fw-semibold">{{ current.effective_from }}</div></div>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Тарифы ещё не заданы.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><i class="bi bi-clock-history me-1"></i>История версий тарифов</div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead>
+                        <tr><th>Действует с</th><th>Эл.</th><th>Вода</th><th>Водоотв. ХВ</th><th>Водоотв. общ.</th><th>Фикс.</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for t in tariffs %}
+                        <tr>
+                            <td>{{ t.effective_from }}</td>
+                            <td>{{ t.tariff_el|money }}</td>
+                            <td>{{ t.tariff_water|money }}</td>
+                            <td>{{ t.tariff_com1|money }}</td>
+                            <td>{{ t.tariff_com2|money }}</td>
+                            <td>{{ t.fixed_fee|money }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="text-muted">Нет данных</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-plus-circle me-1"></i>Новая версия тарифа</div>
+            <div class="card-body">
+                <form method="post" novalidate>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label for="effective_from" class="form-label">Действует с</label>
+                        <input type="date" class="form-control" id="effective_from" name="effective_from"
+                               value="{{ request.form.get('effective_from', today_iso) }}" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label for="tariff_el" class="form-label">Эл., ₽/кВт·ч</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="tariff_el" name="tariff_el"
+                                   value="{{ request.form.get('tariff_el', tariffs[0].tariff_el if tariffs else '2.73') }}" required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="tariff_water" class="form-label">Вода, ₽/м³</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="tariff_water" name="tariff_water"
+                                   value="{{ request.form.get('tariff_water', tariffs[0].tariff_water if tariffs else '31.21') }}" required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="tariff_com1" class="form-label">Водоотв. ХВ, ₽/м³</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="tariff_com1" name="tariff_com1"
+                                   value="{{ request.form.get('tariff_com1', tariffs[0].tariff_com1 if tariffs else '72.83') }}" required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="tariff_com2" class="form-label">Водоотв. общ., ₽/м³</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="tariff_com2" name="tariff_com2"
+                                   value="{{ request.form.get('tariff_com2', tariffs[0].tariff_com2 if tariffs else '21.95') }}" required>
+                        </div>
+                        <div class="col-12 mb-3">
+                            <label for="fixed_fee" class="form-label">Фиксированная плата, ₽/мес.</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="fixed_fee" name="fixed_fee"
+                                   value="{{ request.form.get('fixed_fee', tariffs[0].fixed_fee if tariffs else '17000') }}" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-save me-1"></i>Сохранить тариф</button>
+                    <div class="form-text mt-2">Новый тариф применяется к показаниям с указанной даты. При следующем сохранении, изменении или удалении показания счета объекта пересчитываются по тарифам, действовавшим на даты показаний.</div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><i class="bi bi-key me-1"></i>Код приглашения</div>
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="invite-code" id="inviteCode">{{ prop.invite_code }}</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyCode()"><i class="bi bi-clipboard"></i></button>
+                </div>
+                <p class="small text-muted">Передайте код арендатору. Он вводит его при регистрации или на странице «Присоединиться».</p>
+                <form method="post" action="{{ url_for('main.regenerate_invite', property_id=prop.id) }}"
+                      onsubmit="return confirm('Старый код перестанет действовать. Выпустить новый?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Выпустить новый код</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if tenants %}
+<div class="card mt-4">
+    <div class="card-header"><i class="bi bi-people me-1"></i>Арендаторы объекта</div>
+    <div class="card-body">
+        <ul class="list-group list-group-flush">
+            {% for t in tenants %}
+            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                <span><i class="bi bi-person me-1"></i>{{ t.full_name or t.username }} <span class="text-muted">({{ t.username }})</span></span>
+                <span class="text-muted small">с {{ t.assigned_at }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+function copyCode() {
+    const text = document.getElementById('inviteCode').textContent.trim();
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target.closest('button');
+        const old = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check2"></i>';
+        setTimeout(() => btn.innerHTML = old, 1200);
+    });
+}
+</script>
+{% endblock %}

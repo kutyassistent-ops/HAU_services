@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Доступ запрещён — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="card auth-card">
+    <div class="card-body empty-state">
+        <i class="bi bi-shield-lock"></i>
+        <h1 class="h3 mt-3">403 · Доступ запрещён</h1>
+        <p>У вас недостаточно прав для этой операции.</p>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">На главную</a>
+    </div>
+</div>
+{% endblock %}
