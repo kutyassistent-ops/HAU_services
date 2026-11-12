@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Нет сети — ЖКУ-Учёт</title>
+    <style>
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f7fb; color: #102a43; font-family: "Segoe UI", system-ui, sans-serif; }
+        .card { max-width: 420px; margin: 24px; padding: 32px; background: #fff; border-radius: 16px; box-shadow: 0 10px 30px rgba(16, 42, 67, .12); text-align: center; }
+        h1 { font-size: 1.4rem; margin: 12px 0 8px; }
+        p { color: #52606d; line-height: 1.5; }
+        button { margin-top: 12px; padding: 10px 18px; border: 0; border-radius: 8px; background: #1f4e79; color: #fff; font-size: 1rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div style="font-size:3rem">📡</div>
+    <h1>Нет подключения к интернету</h1>
+    <p>Откройте сохранённые страницы после восстановления сети. Введённые данные не потеряются — повторите действие.</p>
+    <button onclick="location.reload()">Повторить</button>
+</div>
+</body>
+</html>

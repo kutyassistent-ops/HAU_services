@@ -21,7 +21,19 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: ruff check .
 
       - name: Run tests with coverage
-        run: pytest -q --cov=. --cov-report=term-missing
+        run: pytest --cov=. --cov-report=term-missing --cov-fail-under=85
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t hau-services:ci .

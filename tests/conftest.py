@@ -2,7 +2,7 @@ import pytest
 
 from app import create_app
 from extensions import get_db
-from models import add_tariff, create_property, hash_password
+from models import create_property, hash_password
 
 
 @pytest.fixture()
@@ -68,6 +68,16 @@ def app(tmp_path):
 @pytest.fixture()
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture(autouse=True)
+def reset_login_attempts():
+    """Сбрасывает счётчик неудачных входов между тестами."""
+    from auth import _login_attempts
+
+    _login_attempts.clear()
+    yield
+    _login_attempts.clear()
 
 
 @pytest.fixture()

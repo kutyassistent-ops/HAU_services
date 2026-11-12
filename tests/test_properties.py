@@ -1,5 +1,5 @@
 from extensions import get_db
-from tests.conftest import login, logout
+from tests.conftest import login
 
 
 def test_owner_creates_property(app, client):

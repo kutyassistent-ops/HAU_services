@@ -4,7 +4,7 @@
 <div class="page-head">
     <div>
         <h1 class="h3">{{ prop.address }}</h1>
-        <p class="page-subtitle">История показаний и начислений · всего записей: {{ invoices['total'] }}</p>
+        <p class="page-subtitle">История показаний и начислений · найдено записей: {{ invoices['total'] }}</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a href="{{ url_for('main.add_reading', property_id=prop.id) }}" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Внести показания</a>
@@ -19,6 +19,10 @@
         <div class="d-flex flex-wrap gap-3 align-items-center small">
             <span class="text-muted"><i class="bi bi-cash-stack me-1"></i>Действующий тариф с {{ tariff.effective_from }}:</span>
             <span>эл. {{ tariff.tariff_el|money }} ₽/кВт·ч</span>
+            {% if tariff.tariff_el_day is not none %}
+            <span>день {{ tariff.tariff_el_day|money }} ₽/кВт·ч</span>
+            <span>ночь {{ tariff.tariff_el_night|money }} ₽/кВт·ч</span>
+            {% endif %}
             <span>вода {{ tariff.tariff_water|money }} ₽/м³</span>
             <span>водоотв. ХВ {{ tariff.tariff_com1|money }} ₽/м³</span>
             <span>водоотв. общ. {{ tariff.tariff_com2|money }} ₽/м³</span>
@@ -27,6 +31,34 @@
     </div>
 </div>
 {% endif %}
+
+<form method="get" action="{{ url_for('main.history', property_id=prop.id) }}" class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label for="date_from" class="form-label">Период с</label>
+                <input type="date" class="form-control" id="date_from" name="date_from" value="{{ filters.date_from }}">
+            </div>
+            <div class="col-md-3">
+                <label for="date_to" class="form-label">по</label>
+                <input type="date" class="form-control" id="date_to" name="date_to" value="{{ filters.date_to }}">
+            </div>
+            <div class="col-md-3">
+                <label for="status" class="form-label">Статус оплаты</label>
+                <select class="form-select" id="status" name="status">
+                    <option value="" {% if not filters.status %}selected{% endif %}>Все счета</option>
+                    <option value="paid" {% if filters.status == 'paid' %}selected{% endif %}>Оплаченные</option>
+                    <option value="partial" {% if filters.status == 'partial' %}selected{% endif %}>Частично оплаченные</option>
+                    <option value="unpaid" {% if filters.status == 'unpaid' %}selected{% endif %}>Неоплаченные</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>Применить</button>
+                <a href="{{ url_for('main.history', property_id=prop.id) }}" class="btn btn-outline-secondary" title="Сбросить фильтры"><i class="bi bi-x-lg"></i></a>
+            </div>
+        </div>
+    </div>
+</form>
 
 <div class="card">
     <div class="table-responsive">
@@ -38,6 +70,7 @@
                     <th>ХВ, м³</th>
                     <th>Эл., кВт·ч</th>
                     <th>Сумма</th>
+                    <th>Оплачено</th>
                     <th>Статус</th>
                     <th>Кто внёс</th>
                     <th class="text-end">Действия</th>
@@ -49,12 +82,21 @@
                     <td data-label="Дата">{{ r.reading_date }}</td>
                     <td data-label="ГВ">{{ r.hot_water|quantity }}</td>
                     <td data-label="ХВ">{{ r.cool_water|quantity }}</td>
-                    <td data-label="Эл.">{{ r.electricity|quantity }}</td>
+                    <td data-label="Эл.">
+                        {{ r.electricity|quantity }}
+                        {% if r.electricity_day is not none %}
+                        <div class="small text-muted">день {{ r.electricity_day|quantity }} / ночь {{ r.electricity_night|quantity }}</div>
+                        {% endif %}
+                    </td>
                     <td data-label="Сумма" class="fw-semibold">{{ r.total|money }} ₽</td>
+                    <td data-label="Оплачено">{{ r.paid_amount|money }} ₽</td>
                     <td data-label="Статус">
                         {% if r.paid %}
                         <span class="badge bg-success">Оплачено</span>
                         {% if r.paid_at %}<div class="small text-muted">{{ r.paid_at[:16] }}</div>{% endif %}
+                        {% elif r.paid_amount > 0 %}
+                        <span class="badge bg-warning text-dark">Частично</span>
+                        <div class="small text-muted">остаток {{ (r.total - r.paid_amount)|money }} ₽</div>
                         {% else %}
                         <span class="badge bg-danger">Не оплачено</span>
                         {% endif %}
@@ -62,6 +104,7 @@
                     <td data-label="Кто внёс">{{ r.entered_by }}</td>
                     <td data-label="Действия" class="text-end text-nowrap">
                         <a href="{{ url_for('main.invoice_detail', invoice_id=r.id) }}" class="btn btn-outline-primary btn-sm" title="Детали расчёта"><i class="bi bi-receipt"></i></a>
+                        <a href="{{ url_for('main.invoice_print', invoice_id=r.id) }}" class="btn btn-outline-secondary btn-sm" title="Печать квитанции" target="_blank" rel="noopener"><i class="bi bi-printer"></i></a>
                         {% if current_user.is_owner or r.user_id == current_user.id %}
                         <a href="{{ url_for('main.edit_reading', reading_id=r.reading_id) }}" class="btn btn-outline-secondary btn-sm" title="Изменить показание"><i class="bi bi-pencil"></i></a>
                         <form method="post" action="{{ url_for('main.delete_reading_route', reading_id=r.reading_id) }}" class="d-inline"
@@ -73,7 +116,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8"><div class="empty-state"><i class="bi bi-inbox"></i><p class="mt-3 mb-0">Пока нет ни одной записи. Внесите первые показания.</p></div></td></tr>
+                <tr><td colspan="9"><div class="empty-state"><i class="bi bi-inbox"></i><p class="mt-3 mb-0">По выбранным фильтрам записей нет. Измените период или статус.</p></div></td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -84,15 +127,15 @@
 <nav class="mt-4" aria-label="Постраничная навигация">
     <ul class="pagination justify-content-center">
         <li class="page-item {{ 'disabled' if invoices['page'] <= 1 }}">
-            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=invoices['page']-1) }}">Назад</a>
+            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=invoices['page']-1, date_from=filters.date_from, date_to=filters.date_to, status=filters.status) }}">Назад</a>
         </li>
         {% for p in range(1, invoices['pages'] + 1) %}
         <li class="page-item {{ 'active' if p == invoices['page'] }}">
-            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=p) }}">{{ p }}</a>
+            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=p, date_from=filters.date_from, date_to=filters.date_to, status=filters.status) }}">{{ p }}</a>
         </li>
         {% endfor %}
         <li class="page-item {{ 'disabled' if invoices['page'] >= invoices['pages'] }}">
-            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=invoices['page']+1) }}">Вперёд</a>
+            <a class="page-link" href="{{ url_for('main.history', property_id=prop.id, page=invoices['page']+1, date_from=filters.date_from, date_to=filters.date_to, status=filters.status) }}">Вперёд</a>
         </li>
     </ul>
 </nav>

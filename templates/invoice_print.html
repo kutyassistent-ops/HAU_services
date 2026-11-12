@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Квитанция №{{ invoice.id }} от {{ invoice.reading_date }}</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <style>
+        body { background: #fff; color: #111; font-family: "Segoe UI", system-ui, sans-serif; }
+        .receipt { max-width: 210mm; margin: 0 auto; padding: 18mm 16mm; }
+        .receipt table { font-size: 0.92rem; }
+        .receipt .total-row td { font-weight: 700; background: #eef3f8; }
+        .receipt-head { border-bottom: 2px solid #1f4e79; padding-bottom: 12px; margin-bottom: 18px; }
+        .receipt-title { color: #1f4e79; font-weight: 700; }
+        .muted { color: #52606d; }
+        .signature { margin-top: 32px; display: flex; justify-content: space-between; gap: 24px; }
+        .signature div { flex: 1; border-top: 1px solid #52606d; padding-top: 6px; font-size: 0.85rem; color: #52606d; }
+        @media print {
+            .no-print { display: none !important; }
+            .receipt { padding: 0; max-width: none; }
+            @page { size: A4; margin: 14mm; }
+        }
+    </style>
+</head>
+<body>
+<div class="receipt">
+    <div class="no-print d-flex gap-2 justify-content-end mb-4">
+        <button type="button" class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Печать / Сохранить в PDF</button>
+        <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}" class="btn btn-outline-secondary">Назад к счёту</a>
+    </div>
+
+    <div class="receipt-head d-flex justify-content-between align-items-start gap-3">
+        <div>
+            <h1 class="h3 receipt-title mb-1">ЖКУ-Учёт</h1>
+            <div class="muted">Квитанция на оплату коммунальных услуг</div>
+        </div>
+        <div class="text-end">
+            <div><strong>Счёт №{{ invoice.id }}</strong></div>
+            <div class="muted">от {{ invoice.reading_date }}</div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-sm-7">
+            <div class="muted small">Плательщик / объект</div>
+            <div class="fw-semibold">{{ invoice.address }}</div>
+        </div>
+        <div class="col-sm-5">
+            <div class="muted small">Статус</div>
+            <div class="fw-semibold">
+                {% if invoice.paid %}Оплачено{% elif invoice.paid_amount > 0 %}Частично оплачено{% else %}Не оплачено{% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if details %}
+    <h2 class="h6 text-uppercase muted mt-4">Показания и расход</h2>
+    <table class="table table-sm table-bordered align-middle">
+        <thead>
+            <tr><th>Ресурс</th><th class="text-end">Предыдущее</th><th class="text-end">Текущее</th><th class="text-end">Расход</th><th class="text-end">Тариф</th><th class="text-end">Сумма</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Электроэнергия{% if details.get('zones_active') %} (день){% endif %}, кВт·ч</td>
+                <td class="text-end">{{ (details.previous.electricity_day if details.get('zones_active') else details.previous.electricity)|quantity }}</td>
+                <td class="text-end">{{ (details.reading.electricity_day if details.get('zones_active') else details.reading.electricity)|quantity }}</td>
+                <td class="text-end">{{ (details.consumption.electricity_day if details.get('zones_active') else details.consumption.electricity)|quantity }}</td>
+                <td class="text-end">{{ (details.rates.tariff_el_day if details.get('zones_active') else details.rates.tariff_el)|money }}</td>
+                <td class="text-end">{{ details.components.electricity|money }}</td>
+            </tr>
+            {% if details.get('zones_active') %}
+            <tr>
+                <td>Электроэнергия (ночь), кВт·ч</td>
+                <td class="text-end">{{ details.previous.electricity_night|quantity }}</td>
+                <td class="text-end">{{ details.reading.electricity_night|quantity }}</td>
+                <td class="text-end">{{ details.consumption.electricity_night|quantity }}</td>
+                <td class="text-end">{{ details.rates.tariff_el_night|money }}</td>
+                <td class="text-end">—</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td>Горячая вода, м³</td>
+                <td class="text-end">{{ details.previous.hot_water|quantity }}</td>
+                <td class="text-end">{{ details.reading.hot_water|quantity }}</td>
+                <td class="text-end">{{ details.consumption.hot_water|quantity }}</td>
+                <td class="text-end">{{ details.rates.tariff_water|money }}</td>
+                <td class="text-end">{{ details.components.hot_water|money }}</td>
+            </tr>
+            <tr>
+                <td>Холодная вода, м³</td>
+                <td class="text-end">{{ details.previous.cool_water|quantity }}</td>
+                <td class="text-end">{{ details.reading.cool_water|quantity }}</td>
+                <td class="text-end">{{ details.consumption.cool_water|quantity }}</td>
+                <td class="text-end">{{ details.rates.tariff_water|money }}</td>
+                <td class="text-end">{{ details.components.cold_water|money }}</td>
+            </tr>
+            <tr>
+                <td>Водоотведение холодной воды, м³</td>
+                <td class="text-end">{{ details.previous.cool_water|quantity }}</td>
+                <td class="text-end">{{ details.reading.cool_water|quantity }}</td>
+                <td class="text-end">{{ details.consumption.cool_water|quantity }}</td>
+                <td class="text-end">{{ details.rates.tariff_com1|money }}</td>
+                <td class="text-end">{{ details.components.wastewater_cold|money }}</td>
+            </tr>
+            <tr>
+                <td>Водоотведение общее, м³</td>
+                <td class="text-end">—</td>
+                <td class="text-end">—</td>
+                <td class="text-end">{{ (details.consumption.cool_water + details.consumption.hot_water)|quantity }}</td>
+                <td class="text-end">{{ details.rates.tariff_com2|money }}</td>
+                <td class="text-end">{{ details.components.wastewater_total|money }}</td>
+            </tr>
+            <tr>
+                <td colspan="5">Фиксированная плата{% if not details.get('fixed_fee_charged', true) %} (уже начислена в этом месяце){% endif %}</td>
+                <td class="text-end">{{ details.components.fixed_fee|money }}</td>
+            </tr>
+            <tr class="total-row">
+                <td colspan="5">Итого к оплате</td>
+                <td class="text-end">{{ invoice.total|money }} ₽</td>
+            </tr>
+            {% if invoice.paid_amount > 0 %}
+            <tr>
+                <td colspan="5">Оплачено</td>
+                <td class="text-end">{{ invoice.paid_amount|money }} ₽</td>
+            </tr>
+            <tr>
+                <td colspan="5">Остаток</td>
+                <td class="text-end">{{ (invoice.total - invoice.paid_amount)|money }} ₽</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if split.tenants %}
+    <h2 class="h6 text-uppercase muted mt-4">Разделение между арендаторами</h2>
+    <table class="table table-sm table-bordered">
+        <thead><tr><th>Арендатор</th><th class="text-end">Доля</th><th class="text-end">Сумма к оплате</th></tr></thead>
+        <tbody>
+            {% for row in split.tenants %}
+            <tr>
+                <td>{{ row.full_name or row.username }}</td>
+                <td class="text-end">{{ '%.1f'|format(row.share * 100) }}%</td>
+                <td class="text-end">{{ row.amount|money }} ₽</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if payments %}
+    <h2 class="h6 text-uppercase muted mt-4">История платежей</h2>
+    <table class="table table-sm table-bordered">
+        <thead><tr><th>Дата</th><th>Сумма</th><th>Комментарий</th></tr></thead>
+        <tbody>
+            {% for payment in payments %}
+            <tr><td>{{ payment.paid_at[:16] }}</td><td>{{ payment.amount|money }} ₽</td><td>{{ payment.comment or '—' }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <p class="small muted mt-4">Квитанция сформирована автоматически сервисом «ЖКУ-Учёт». Проверьте показания и сумму до оплаты.</p>
+
+    <div class="signature">
+        <div>Подпись плательщика</div>
+        <div>Подпись исполнителя</div>
+    </div>
+</div>
+</body>
+</html>

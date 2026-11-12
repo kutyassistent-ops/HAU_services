@@ -16,10 +16,15 @@ csrf = CSRFProtect()
 def get_db() -> sqlite3.Connection:
     """Соединение с БД в рамках текущего запроса/контекста приложения."""
     if "db" not in g:
-        g.db = sqlite3.connect(current_app.config["DATABASE"])
+        g.db = sqlite3.connect(
+            current_app.config["DATABASE"],
+            timeout=current_app.config.get("SQLITE_TIMEOUT", 10),
+        )
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
+        g.db.execute("PRAGMA busy_timeout = 5000")
         g.db.execute("PRAGMA journal_mode = WAL")
+        g.db.execute("PRAGMA synchronous = NORMAL")
     return g.db
 
 

@@ -1,0 +1,27 @@
+services:
+  web:
+    build: .
+    image: hau-services:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Обязательно задайте собственный ключ перед публикацией.
+      SECRET_KEY: "${SECRET_KEY:-change-me-to-a-long-random-string}"
+      DATABASE_PATH: /data/utility_billing.db
+      LOG_FILE: /data/app.log
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-0}"
+      # Email-уведомления по умолчанию отключены.
+      NOTIFICATIONS_ENABLED: "${NOTIFICATIONS_ENABLED:-0}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-no-reply@example.ru}"
+      SMTP_USE_TLS: "${SMTP_USE_TLS:-1}"
+    volumes:
+      - hau_data:/data
+
+volumes:
+  hau_data:

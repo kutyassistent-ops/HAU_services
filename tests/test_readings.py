@@ -26,7 +26,10 @@ def test_calculation_formula():
         {"tariff_el": 4, "tariff_water": 40, "tariff_com1": 30,
          "tariff_com2": 20, "fixed_fee": 10000},
     )
-    assert result["consumption"] == {"hot_water": 2.0, "cool_water": 5.0, "electricity": 20.0}
+    assert result["consumption"] == {
+        "hot_water": 2.0, "cool_water": 5.0, "electricity": 20.0,
+        "electricity_day": None, "electricity_night": None,
+    }
     assert result["components"]["electricity"] == 80.0
     assert result["components"]["hot_water"] == 80.0
     assert result["components"]["cold_water"] == 200.0
@@ -47,7 +50,8 @@ def test_first_reading_is_baseline(app, client, ids):
         assert invoice["total"] == 10000.0
         assert details["baseline"] is True
         assert details["consumption"] == {
-            "hot_water": 0.0, "cool_water": 0.0, "electricity": 0.0
+            "hot_water": 0.0, "cool_water": 0.0, "electricity": 0.0,
+            "electricity_day": None, "electricity_night": None,
         }
 
 
@@ -63,7 +67,8 @@ def test_second_reading_calculated(app, client, ids):
         ).fetchone()
         details = json.loads(invoice["details"])
         assert details["consumption"] == {
-            "hot_water": 2.0, "cool_water": 5.0, "electricity": 20.0
+            "hot_water": 2.0, "cool_water": 5.0, "electricity": 20.0,
+            "electricity_day": None, "electricity_night": None,
         }
         assert invoice["total"] == 10650.0
 

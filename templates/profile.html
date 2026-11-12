@@ -41,12 +41,40 @@
         </div>
     </div>
     <div class="col-lg-5">
-        <div class="card">
+        <div class="card mb-4">
             <div class="card-header"><i class="bi bi-shield-check me-1"></i>Безопасность</div>
             <div class="card-body small text-muted">
                 <p>Пароль хранится в виде bcrypt-хеша с индивидуальной солью и не может быть восстановлен в открытом виде.</p>
                 <p>Все изменяющие запросы защищены CSRF-токеном, а доступ к объектам проверяется по роли и владельцу.</p>
                 <p class="mb-0">Дата регистрации: {{ current_user.created_at or '—' }}</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><i class="bi bi-phone me-1"></i>REST API</div>
+            <div class="card-body">
+                <p class="small text-muted">Read-only API для мобильного клиента. Передавайте токен в заголовке <code>Authorization: Bearer ...</code>. Токен показывается один раз после выпуска — сохраните его.</p>
+                {% if api_token %}
+                <div class="mb-3">
+                    <label class="form-label">Текущий токен</label>
+                    <input type="text" class="form-control font-monospace" value="{{ api_token }}" readonly onclick="this.select()">
+                </div>
+                <form method="post" action="{{ url_for('auth.delete_api_token') }}" class="d-inline"
+                      onsubmit="return confirm('Отозвать API-токен? Подключённые клиенты потеряют доступ.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-x-circle me-1"></i>Отозвать</button>
+                </form>
+                <form method="post" action="{{ url_for('auth.create_api_token') }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Перевыпустить</button>
+                </form>
+                {% else %}
+                <form method="post" action="{{ url_for('auth.create_api_token') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-key me-1"></i>Выпустить токен</button>
+                </form>
+                {% endif %}
+                <div class="small text-muted mt-3">Документация: <code>docs/api.md</code></div>
             </div>
         </div>
     </div>

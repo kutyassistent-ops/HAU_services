@@ -5,19 +5,57 @@ import csv
 import io
 from datetime import date
 
-from flask import (Blueprint, Response, abort, flash, jsonify, redirect,
-                   render_template, request, url_for)
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
 
 from extensions import get_db
 from models import (
-    add_tariff, assign_tenant, create_property, delete_reading,
-    get_all_tenants, get_dashboard_properties, get_invoice, get_invoice_details,
-    get_invoices, get_latest_tariff, get_property, get_property_report_rows,
-    get_property_tenants, get_stats_data, get_tariff_history,
-    get_user_debt_summary, get_user_properties, join_by_invite, leave_property,
-    mark_invoice_paid, mark_invoice_unpaid, regenerate_invite_code,
-    remove_tenant, save_reading, update_property_address,
+    add_invoice_payment,
+    add_tariff,
+    archive_property,
+    assign_tenant,
+    create_property,
+    delete_invoice_payment,
+    delete_reading,
+    get_archived_properties,
+    get_audit_actions,
+    get_audit_log,
+    get_dashboard_properties,
+    get_invoice,
+    get_invoice_details,
+    get_invoice_payments,
+    get_invoice_split,
+    get_invoices,
+    get_latest_tariff,
+    get_property,
+    get_property_report_rows,
+    get_property_tenants,
+    get_stats_data,
+    get_tariff_history,
+    get_user_debt_summary,
+    get_user_properties,
+    join_by_invite,
+    leave_property,
+    mark_invoice_paid,
+    mark_invoice_unpaid,
+    recalculate_property_invoices,
+    regenerate_invite_code,
+    remove_tenant,
+    save_reading,
+    unarchive_property,
+    update_property_address,
+    update_tenant_share,
     user_can_access_property,
 )
 from utils import role_required
@@ -43,18 +81,30 @@ def dashboard():
     total_last_invoice = sum(
         (p["last_invoice_total"] or 0) for p in properties
     )
+    archived_count = 0
+    if current_user.is_owner:
+        archived_count = len(get_archived_properties(current_user.id))
     return render_template(
         "dashboard.html",
         properties=properties,
         summary=summary,
         total_last_invoice=total_last_invoice,
+        archived_count=archived_count,
     )
 
 
 @main_bp.route("/healthz")
 def healthz():
     get_db().execute("SELECT 1").fetchone()
-    return jsonify(status="ok")
+    return jsonify(status="ok", app="HAU_services")
+
+
+@main_bp.route("/sw.js")
+def service_worker():
+    response = current_app.send_static_file("sw.js")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +167,15 @@ def property_tariffs(property_id: int):
                 request.form,
                 current_user.id,
             )
+            recalculated = recalculate_property_invoices(property_id, current_user.id)
             get_db().commit()
-            flash("Новая версия тарифа сохранена. Она применяется к показаниям с указанной даты.", "success")
+            if recalculated:
+                flash(
+                    f"Тариф сохранён. Пересчитано счетов: {recalculated}.",
+                    "success",
+                )
+            else:
+                flash("Новая версия тарифа сохранена. Она применяется к показаниям с указанной даты.", "success")
             return redirect(url_for("main.property_tariffs", property_id=property_id))
         except ValueError as exc:
             get_db().rollback()
@@ -146,6 +203,41 @@ def regenerate_invite(property_id: int):
     return redirect(url_for("main.property_tariffs", property_id=property_id))
 
 
+@main_bp.route("/properties/<int:property_id>/archive", methods=["POST"])
+@role_required("owner")
+def archive_property_route(property_id: int):
+    try:
+        archive_property(property_id, current_user.id)
+        get_db().commit()
+        flash("Объект архивирован. История и счета сохранены.", "info")
+    except ValueError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("main.dashboard"))
+
+
+@main_bp.route("/properties/<int:property_id>/unarchive", methods=["POST"])
+@role_required("owner")
+def unarchive_property_route(property_id: int):
+    try:
+        unarchive_property(property_id, current_user.id)
+        get_db().commit()
+        flash("Объект восстановлен из архива.", "success")
+    except ValueError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("main.archived_properties"))
+
+
+@main_bp.route("/properties/archived")
+@role_required("owner")
+def archived_properties():
+    return render_template(
+        "archived.html",
+        properties=get_archived_properties(current_user.id),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Арендаторы
 # ---------------------------------------------------------------------------
@@ -155,11 +247,13 @@ def tenants():
     properties = get_user_properties(current_user)
     rows = []
     for prop in properties:
+        tenant_rows = get_property_tenants(prop["id"])
         rows.append({
             **prop,
-            "tenants": get_property_tenants(prop["id"]),
+            "tenants": tenant_rows,
+            "shares_sum": round(sum(float(t["share"] or 0) for t in tenant_rows), 4),
         })
-    return render_template("tenants.html", properties=rows, all_tenants=get_all_tenants())
+    return render_template("tenants.html", properties=rows)
 
 
 @main_bp.route("/tenants/assign", methods=["POST"])
@@ -167,12 +261,27 @@ def tenants():
 def assign_tenant_route():
     property_id = request.form.get("property_id", type=int)
     username = request.form.get("username", "").strip()
+    share = request.form.get("share", "").strip() or None
     try:
         if not property_id:
             raise ValueError("Выберите объект.")
-        tenant = assign_tenant(property_id, username, current_user.id)
+        tenant = assign_tenant(property_id, username, current_user.id, share)
         get_db().commit()
         flash(f"Арендатор {tenant['username']} привязан к объекту.", "success")
+    except ValueError as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("main.tenants"))
+
+
+@main_bp.route("/tenants/<int:property_id>/<int:tenant_id>/share", methods=["POST"])
+@role_required("owner")
+def update_tenant_share_route(property_id: int, tenant_id: int):
+    try:
+        update_tenant_share(property_id, tenant_id, current_user.id,
+                            request.form.get("share", ""))
+        get_db().commit()
+        flash("Доля арендатора обновлена.", "success")
     except ValueError as exc:
         get_db().rollback()
         flash(str(exc), "danger")
@@ -344,24 +453,49 @@ def _get_accessible_property_or_404(property_id: int) -> dict:
     return prop
 
 
+def _history_filters() -> dict:
+    status = request.args.get("status", "").strip()
+    if status not in ("", "paid", "unpaid", "partial"):
+        status = ""
+    return {
+        "date_from": request.args.get("date_from", "").strip(),
+        "date_to": request.args.get("date_to", "").strip(),
+        "status": status,
+    }
+
+
 @main_bp.route("/properties/<int:property_id>/history")
 @login_required
 def history(property_id: int):
     prop = _get_accessible_property_or_404(property_id)
     page = request.args.get("page", 1, type=int)
-    invoices = get_invoices(property_id, page=page)
+    filters = _history_filters()
+    try:
+        invoices = get_invoices(
+            property_id,
+            page=page,
+            date_from=filters["date_from"] or None,
+            date_to=filters["date_to"] or None,
+            status=filters["status"] or None,
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("main.history", property_id=property_id))
+    filter_args = {key: value for key, value in filters.items() if value}
     return render_template(
         "history.html",
         prop=prop,
         invoices=invoices,
         tariff=get_latest_tariff(property_id),
+        filters=filters,
+        filter_args=filter_args,
     )
 
 
 @main_bp.route("/properties/<int:property_id>/history.csv")
 @login_required
 def history_csv(property_id: int):
-    prop = _get_accessible_property_or_404(property_id)
+    _get_accessible_property_or_404(property_id)
     rows = get_property_report_rows(property_id)
     output = io.StringIO()
     output.write("\ufeff")
@@ -369,7 +503,7 @@ def history_csv(property_id: int):
     writer.writerow([
         "Дата", "ГВ, м3", "ХВ, м3", "Электроэнергия, кВт·ч",
         "Расход ГВ, м3", "Расход ХВ, м3", "Расход эл-ва, кВт·ч",
-        "Сумма, руб.", "Оплачено", "Дата оплаты", "Внёс",
+        "Сумма, руб.", "Оплачено", "Оплачено, руб.", "Дата оплаты", "Внёс",
     ])
     for row in rows:
         writer.writerow([
@@ -378,6 +512,7 @@ def history_csv(property_id: int):
             row["consumption_cold"], row["consumption_el"],
             f"{row['total']:.2f}" if row["total"] is not None else "",
             "Да" if row["paid"] else "Нет",
+            f"{row['paid_amount']:.2f}" if row["paid_amount"] is not None else "",
             row["paid_at"] or "",
             row["entered_by"],
         ])
@@ -399,7 +534,25 @@ def invoice_detail(invoice_id: int):
         "invoice_detail.html",
         invoice=invoice,
         details=get_invoice_details(invoice),
+        payments=get_invoice_payments(invoice_id),
+        split=get_invoice_split(invoice),
         can_pay=current_user.is_owner and invoice["owner_id"] == current_user.id,
+        today_value=date.today().isoformat(),
+    )
+
+
+@main_bp.route("/invoices/<int:invoice_id>/print")
+@login_required
+def invoice_print(invoice_id: int):
+    invoice = get_invoice(invoice_id)
+    if not invoice or not user_can_access_property(current_user, invoice["property_id"]):
+        abort(404)
+    return render_template(
+        "invoice_print.html",
+        invoice=invoice,
+        details=get_invoice_details(invoice),
+        payments=get_invoice_payments(invoice_id),
+        split=get_invoice_split(invoice),
     )
 
 
@@ -407,7 +560,7 @@ def invoice_detail(invoice_id: int):
 @role_required("owner")
 def pay_invoice(invoice_id: int):
     try:
-        invoice = mark_invoice_paid(invoice_id, current_user.id)
+        mark_invoice_paid(invoice_id, current_user.id)
         get_db().commit()
         flash("Счёт отмечен как оплаченный.", "success")
         return redirect(url_for("main.invoice_detail", invoice_id=invoice_id))
@@ -418,7 +571,7 @@ def pay_invoice(invoice_id: int):
     except ValueError as exc:
         get_db().rollback()
         flash(str(exc), "danger")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.invoice_detail", invoice_id=invoice_id))
 
 
 @main_bp.route("/invoices/<int:invoice_id>/unpay", methods=["POST"])
@@ -433,6 +586,67 @@ def unpay_invoice(invoice_id: int):
         get_db().rollback()
         flash(str(exc), "danger")
         return redirect(url_for("main.dashboard"))
+
+
+@main_bp.route("/invoices/<int:invoice_id>/payments", methods=["POST"])
+@role_required("owner")
+def add_payment_route(invoice_id: int):
+    try:
+        add_invoice_payment(
+            invoice_id,
+            current_user.id,
+            request.form.get("amount", ""),
+            request.form.get("paid_at") or None,
+            request.form.get("comment", ""),
+        )
+        get_db().commit()
+        flash("Платёж добавлен.", "success")
+    except (PermissionError, ValueError) as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("main.invoice_detail", invoice_id=invoice_id))
+
+
+@main_bp.route("/payments/<int:payment_id>/delete", methods=["POST"])
+@role_required("owner")
+def delete_payment_route(payment_id: int):
+    try:
+        invoice = delete_invoice_payment(payment_id, current_user.id)
+        get_db().commit()
+        flash("Платёж удалён, счёт снова не оплачен.", "info")
+        return redirect(url_for("main.invoice_detail", invoice_id=invoice["id"]))
+    except (PermissionError, ValueError) as exc:
+        get_db().rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("main.dashboard"))
+
+
+@main_bp.route("/invoices/<int:invoice_id>/notify", methods=["POST"])
+@role_required("owner")
+def notify_invoice(invoice_id: int):
+    invoice = get_invoice(invoice_id)
+    if not invoice or invoice["owner_id"] != current_user.id:
+        abort(404)
+    from notifications import notify_invoice_by_email
+
+    result = notify_invoice_by_email(invoice_id)
+    flash(result["message"], "success" if result["sent"] else "warning")
+    return redirect(url_for("main.invoice_detail", invoice_id=invoice_id))
+
+
+# ---------------------------------------------------------------------------
+# Журнал действий
+# ---------------------------------------------------------------------------
+@main_bp.route("/audit")
+@role_required("owner")
+def audit():
+    action = request.args.get("action", "").strip() or None
+    return render_template(
+        "audit.html",
+        entries=get_audit_log(current_user.id, action=action),
+        actions=get_audit_actions(current_user.id),
+        selected_action=action or "",
+    )
 
 
 # ---------------------------------------------------------------------------

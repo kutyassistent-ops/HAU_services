@@ -21,6 +21,10 @@
                 {% set current = tariffs[0] %}
                 <div class="row g-3">
                     <div class="col-6 col-md-4"><div class="text-muted small">Электроэнергия</div><div class="fw-semibold">{{ current.tariff_el|money }} ₽/кВт·ч</div></div>
+                    {% if current.tariff_el_day is not none %}
+                    <div class="col-6 col-md-4"><div class="text-muted small">Электроэнергия, день</div><div class="fw-semibold">{{ current.tariff_el_day|money }} ₽/кВт·ч</div></div>
+                    <div class="col-6 col-md-4"><div class="text-muted small">Электроэнергия, ночь</div><div class="fw-semibold">{{ current.tariff_el_night|money }} ₽/кВт·ч</div></div>
+                    {% endif %}
                     <div class="col-6 col-md-4"><div class="text-muted small">Вода</div><div class="fw-semibold">{{ current.tariff_water|money }} ₽/м³</div></div>
                     <div class="col-6 col-md-4"><div class="text-muted small">Водоотведение ХВ</div><div class="fw-semibold">{{ current.tariff_com1|money }} ₽/м³</div></div>
                     <div class="col-6 col-md-4"><div class="text-muted small">Водоотведение общее</div><div class="fw-semibold">{{ current.tariff_com2|money }} ₽/м³</div></div>
@@ -38,20 +42,22 @@
             <div class="table-responsive">
                 <table class="table table-sm mb-0 align-middle">
                     <thead>
-                        <tr><th>Действует с</th><th>Эл.</th><th>Вода</th><th>Водоотв. ХВ</th><th>Водоотв. общ.</th><th>Фикс.</th></tr>
+                        <tr><th>Действует с</th><th>Эл.</th><th>Эл. день</th><th>Эл. ночь</th><th>Вода</th><th>Водоотв. ХВ</th><th>Водоотв. общ.</th><th>Фикс.</th></tr>
                     </thead>
                     <tbody>
                         {% for t in tariffs %}
                         <tr>
                             <td>{{ t.effective_from }}</td>
                             <td>{{ t.tariff_el|money }}</td>
+                            <td>{{ t.tariff_el_day|money if t.tariff_el_day is not none else '—' }}</td>
+                            <td>{{ t.tariff_el_night|money if t.tariff_el_night is not none else '—' }}</td>
                             <td>{{ t.tariff_water|money }}</td>
                             <td>{{ t.tariff_com1|money }}</td>
                             <td>{{ t.tariff_com2|money }}</td>
                             <td>{{ t.fixed_fee|money }}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="6" class="text-muted">Нет данных</td></tr>
+                        <tr><td colspan="8" class="text-muted">Нет данных</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -77,6 +83,18 @@
                                    value="{{ request.form.get('tariff_el', tariffs[0].tariff_el if tariffs else '2.73') }}" required>
                         </div>
                         <div class="col-6 mb-3">
+                            <label for="tariff_el_day" class="form-label">Эл. день, ₽/кВт·ч</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="tariff_el_day" name="tariff_el_day"
+                                   value="{{ request.form.get('tariff_el_day', tariffs[0].tariff_el_day if tariffs and tariffs[0].tariff_el_day is not none else '') }}"
+                                   placeholder="Необязательно">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="tariff_el_night" class="form-label">Эл. ночь, ₽/кВт·ч</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="tariff_el_night" name="tariff_el_night"
+                                   value="{{ request.form.get('tariff_el_night', tariffs[0].tariff_el_night if tariffs and tariffs[0].tariff_el_night is not none else '') }}"
+                                   placeholder="Необязательно">
+                        </div>
+                        <div class="col-6 mb-3">
                             <label for="tariff_water" class="form-label">Вода, ₽/м³</label>
                             <input type="number" step="0.01" min="0" class="form-control" id="tariff_water" name="tariff_water"
                                    value="{{ request.form.get('tariff_water', tariffs[0].tariff_water if tariffs else '31.21') }}" required>
@@ -98,7 +116,7 @@
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary w-100"><i class="bi bi-save me-1"></i>Сохранить тариф</button>
-                    <div class="form-text mt-2">Новый тариф применяется к показаниям с указанной даты. При следующем сохранении, изменении или удалении показания счета объекта пересчитываются по тарифам, действовавшим на даты показаний.</div>
+                    <div class="form-text mt-2">Новый тариф применяется к показаниям с указанной даты. После сохранения все счета объекта пересчитываются автоматически. Зоны «день/ночь» необязательны: заполните оба поля или оставьте оба пустыми.</div>
                 </form>
             </div>
         </div>

@@ -8,15 +8,22 @@
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a href="{{ url_for('main.history', property_id=invoice.property_id) }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>К истории</a>
+        <a href="{{ url_for('main.invoice_print', invoice_id=invoice.id) }}" class="btn btn-outline-primary" target="_blank" rel="noopener"><i class="bi bi-printer me-1"></i>Печать / PDF</a>
+        {% if can_pay %}
+        <form method="post" action="{{ url_for('main.notify_invoice', invoice_id=invoice.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-envelope me-1"></i>Отправить на email</button>
+        </form>
+        {% endif %}
         {% if can_pay and not invoice.paid %}
         <form method="post" action="{{ url_for('main.pay_invoice', invoice_id=invoice.id) }}"
-              onsubmit="return confirm('Подтвердить оплату счёта?');">
+              onsubmit="return confirm('Подтвердить полную оплату счёта? Будет добавлен платёж на остаток.');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-success"><i class="bi bi-check2-circle me-1"></i>Отметить оплаченным</button>
+            <button type="submit" class="btn btn-success"><i class="bi bi-check2-circle me-1"></i>Оплатить полностью</button>
         </form>
         {% elif can_pay and invoice.paid %}
         <form method="post" action="{{ url_for('main.unpay_invoice', invoice_id=invoice.id) }}"
-              onsubmit="return confirm('Отменить оплату счёта?');">
+              onsubmit="return confirm('Отменить оплату счёта? Все платежи по счёту будут удалены.');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise me-1"></i>Отменить оплату</button>
         </form>
@@ -26,7 +33,7 @@
 
 <div class="row g-4">
     <div class="col-lg-8">
-        <div class="card">
+        <div class="card mb-4">
             <div class="card-header"><i class="bi bi-receipt me-1"></i>Детализация расчёта</div>
             <div class="card-body">
                 {% if details %}
@@ -37,7 +44,12 @@
                         <tbody>
                             <tr><td>Горячая вода, м³</td><td class="text-end">{{ details.previous.hot_water|quantity }}</td><td class="text-end">{{ details.reading.hot_water|quantity }}</td><td class="text-end fw-semibold">{{ details.consumption.hot_water|quantity }}</td></tr>
                             <tr><td>Холодная вода, м³</td><td class="text-end">{{ details.previous.cool_water|quantity }}</td><td class="text-end">{{ details.reading.cool_water|quantity }}</td><td class="text-end fw-semibold">{{ details.consumption.cool_water|quantity }}</td></tr>
+                            {% if details.get('zones_active') %}
+                            <tr><td>Электроэнергия, день, кВт·ч</td><td class="text-end">{{ details.previous.electricity_day|quantity }}</td><td class="text-end">{{ details.reading.electricity_day|quantity }}</td><td class="text-end fw-semibold">{{ details.consumption.electricity_day|quantity }}</td></tr>
+                            <tr><td>Электроэнергия, ночь, кВт·ч</td><td class="text-end">{{ details.previous.electricity_night|quantity }}</td><td class="text-end">{{ details.reading.electricity_night|quantity }}</td><td class="text-end fw-semibold">{{ details.consumption.electricity_night|quantity }}</td></tr>
+                            {% else %}
                             <tr><td>Электроэнергия, кВт·ч</td><td class="text-end">{{ details.previous.electricity|quantity }}</td><td class="text-end">{{ details.reading.electricity|quantity }}</td><td class="text-end fw-semibold">{{ details.consumption.electricity|quantity }}</td></tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>
@@ -47,12 +59,16 @@
                     <table class="table table-sm align-middle breakdown-table">
                         <thead><tr><th>Составляющая</th><th>Расчёт</th><th class="text-end">Сумма</th></tr></thead>
                         <tbody>
+                            {% if details.get('zones_active') %}
+                            <tr><td>Электроэнергия (день + ночь)</td><td class="text-muted">{{ details.consumption.electricity_day|quantity }} × {{ details.rates.tariff_el_day|money }} + {{ details.consumption.electricity_night|quantity }} × {{ details.rates.tariff_el_night|money }}</td><td>{{ details.components.electricity|money }} ₽</td></tr>
+                            {% else %}
                             <tr><td>Электроэнергия</td><td class="text-muted">{{ details.consumption.electricity|quantity }} × {{ details.rates.tariff_el|money }}</td><td>{{ details.components.electricity|money }} ₽</td></tr>
+                            {% endif %}
                             <tr><td>Горячая вода</td><td class="text-muted">{{ details.consumption.hot_water|quantity }} × {{ details.rates.tariff_water|money }}</td><td>{{ details.components.hot_water|money }} ₽</td></tr>
                             <tr><td>Холодная вода</td><td class="text-muted">{{ details.consumption.cool_water|quantity }} × {{ details.rates.tariff_water|money }}</td><td>{{ details.components.cold_water|money }} ₽</td></tr>
                             <tr><td>Водоотведение ХВ</td><td class="text-muted">{{ details.consumption.cool_water|quantity }} × {{ details.rates.tariff_com1|money }}</td><td>{{ details.components.wastewater_cold|money }} ₽</td></tr>
                             <tr><td>Водоотведение общее</td><td class="text-muted">({{ details.consumption.cool_water|quantity }} + {{ details.consumption.hot_water|quantity }}) × {{ details.rates.tariff_com2|money }}</td><td>{{ details.components.wastewater_total|money }} ₽</td></tr>
-                            <tr><td>Фиксированная плата</td><td class="text-muted">ежемесячно</td><td>{{ details.components.fixed_fee|money }} ₽</td></tr>
+                            <tr><td>Фиксированная плата</td><td class="text-muted">{% if details.get('fixed_fee_charged', true) %}ежемесячно{% else %}уже начислена в этом месяце{% endif %}</td><td>{{ details.components.fixed_fee|money }} ₽</td></tr>
                             <tr class="total-row"><td colspan="2">Итого к оплате</td><td>{{ invoice.total|money }} ₽</td></tr>
                         </tbody>
                     </table>
@@ -65,6 +81,64 @@
                 {% endif %}
             </div>
         </div>
+
+        <div class="card">
+            <div class="card-header"><i class="bi bi-cash-coin me-1"></i>Платежи по счёту</div>
+            <div class="card-body">
+                {% if payments %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-3">
+                        <thead><tr><th>Дата</th><th>Сумма</th><th>Комментарий</th><th>Кто внёс</th><th></th></tr></thead>
+                        <tbody>
+                            {% for payment in payments %}
+                            <tr>
+                                <td>{{ payment.paid_at[:16] }}</td>
+                                <td class="fw-semibold">{{ payment.amount|money }} ₽</td>
+                                <td class="text-muted small">{{ payment.comment or '—' }}</td>
+                                <td>{{ payment.created_by_name or payment.created_by_username or '—' }}</td>
+                                <td class="text-end">
+                                    {% if can_pay %}
+                                    <form method="post" action="{{ url_for('main.delete_payment_route', payment_id=payment.id) }}"
+                                          onsubmit="return confirm('Удалить этот платёж?');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Удалить платёж"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-3">Платежей пока нет.</p>
+                {% endif %}
+
+                {% if can_pay and not invoice.paid %}
+                {% set remaining = invoice.total - invoice.paid_amount %}
+                <form method="post" action="{{ url_for('main.add_payment_route', invoice_id=invoice.id) }}" class="row g-3 align-items-end">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="col-md-4">
+                        <label for="amount" class="form-label">Сумма платежа, ₽</label>
+                        <input type="number" step="0.01" min="0.01" max="{{ '%.2f'|format(remaining) }}" class="form-control"
+                               id="amount" name="amount" value="{{ '%.2f'|format(remaining) }}" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="paid_at" class="form-label">Дата платежа</label>
+                        <input type="date" class="form-control" id="paid_at" name="paid_at" value="{{ today_value }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="comment" class="form-label">Комментарий</label>
+                        <input type="text" class="form-control" id="comment" name="comment" maxlength="300" placeholder="Например, перевод">
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Добавить платёж</button>
+                        <span class="text-muted small ms-2">Остаток: {{ remaining|money }} ₽</span>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+        </div>
     </div>
 
     <div class="col-lg-4">
@@ -74,17 +148,46 @@
                 <p class="mb-2">
                     {% if invoice.paid %}
                     <span class="badge bg-success fs-6">Оплачено</span>
+                    {% elif invoice.paid_amount > 0 %}
+                    <span class="badge bg-warning text-dark fs-6">Частично оплачено</span>
                     {% else %}
                     <span class="badge bg-danger fs-6">Не оплачено</span>
                     {% endif %}
                 </p>
                 <p class="mb-1"><span class="text-muted">Сумма:</span> <strong>{{ invoice.total|money }} ₽</strong></p>
+                <p class="mb-1"><span class="text-muted">Оплачено:</span> <strong>{{ invoice.paid_amount|money }} ₽</strong></p>
+                <p class="mb-1"><span class="text-muted">Остаток:</span> <strong>{{ (invoice.total - invoice.paid_amount)|money }} ₽</strong></p>
                 {% if invoice.paid_at %}
-                <p class="mb-1"><span class="text-muted">Дата оплаты:</span> {{ invoice.paid_at[:16] }}</p>
+                <p class="mb-1"><span class="text-muted">Дата полной оплаты:</span> {{ invoice.paid_at[:16] }}</p>
                 <p class="mb-0"><span class="text-muted">Подтвердил:</span> {{ invoice.paid_by_name or invoice.paid_by_username or '—' }}</p>
                 {% endif %}
             </div>
         </div>
+
+        {% if split.tenants %}
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-people me-1"></i>Разделение счёта</div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-2">
+                        <thead><tr><th>Арендатор</th><th class="text-end">Доля</th><th class="text-end">Сумма</th></tr></thead>
+                        <tbody>
+                            {% for row in split.tenants %}
+                            <tr>
+                                <td>{{ row.full_name or row.username }}</td>
+                                <td class="text-end">{{ '%.1f'|format(row.share * 100) }}%</td>
+                                <td class="text-end fw-semibold">{{ row.amount|money }} ₽</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if split.shares_sum != 1 %}
+                <p class="small text-warning mb-0"><i class="bi bi-exclamation-triangle me-1"></i>Сумма долей {{ '%.2f'|format(split.shares_sum) }}. Суммы выше нормализованы пропорционально.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
 
         <div class="card">
             <div class="card-header"><i class="bi bi-person me-1"></i>Показание внёс</div>

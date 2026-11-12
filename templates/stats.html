@@ -94,7 +94,7 @@
 {% endblock %}
 {% block scripts %}
 {% if data.labels %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/chart.js/chart.umd.min.js') }}"></script>
 <script>
     const labels = {{ data.labels_display|tojson }};
     const totals = {{ data.totals|tojson }};

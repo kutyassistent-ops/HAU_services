@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Слишком много запросов — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="card auth-card"><div class="card-body text-center">
+    <i class="bi bi-hourglass-split display-4 text-warning"></i>
+    <h1 class="h4 mt-3">Слишком много попыток</h1>
+    <p class="text-muted">Повторите действие через несколько минут.</p>
+    <a href="{{ url_for('auth.login') }}" class="btn btn-primary">Ко входу</a>
+</div></div>
+{% endblock %}

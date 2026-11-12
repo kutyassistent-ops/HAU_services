@@ -3,15 +3,18 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import date
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from flask import Flask, render_template
 
-from config import Config
-from extensions import csrf, init_app as init_extensions, login_manager
-from models import init_db, load_user
+from api import api_bp
 from auth import auth_bp
+from config import Config
+from extensions import csrf, login_manager
+from extensions import init_app as init_extensions
+from models import init_db, load_user
 from routes import main_bp
 
 
@@ -38,6 +41,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
+    if (app.config["SECRET_KEY"] == "dev-only-secret-key-change-me"
+            and not app.config.get("TESTING")):
+        app.logger.warning(
+            "Используется SECRET_KEY по умолчанию. Задайте переменную окружения "
+            "SECRET_KEY перед публикацией приложения."
+        )
+
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     _configure_logging(app)
@@ -49,6 +59,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
+    app.register_blueprint(api_bp)
 
     @app.template_filter("money")
     def money_filter(value):
@@ -66,8 +77,21 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.context_processor
     def inject_globals():
-        from datetime import date
-        return {"current_year": 2026, "today_iso": date.today().isoformat()}
+        return {
+            "current_year": date.today().year,
+            "today_iso": date.today().isoformat(),
+            "app_version": app.config.get("APP_VERSION", ""),
+        }
+
+    @app.after_request
+    def security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy", "geolocation=(), camera=(), microphone=()"
+        )
+        return response
 
     @app.errorhandler(403)
     def forbidden(error):  # noqa: ARG001
@@ -76,6 +100,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.errorhandler(404)
     def not_found(error):  # noqa: ARG001
         return render_template("errors/404.html"), 404
+
+    @app.errorhandler(413)
+    def too_large(error):  # noqa: ARG001
+        return render_template("errors/413.html"), 413
+
+    @app.errorhandler(429)
+    def too_many_requests(error):  # noqa: ARG001
+        return render_template("errors/429.html"), 429
 
     @app.errorhandler(500)
     def server_error(error):  # noqa: ARG001

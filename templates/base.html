@@ -4,10 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="ЖКУ-Учёт — веб-система учёта показаний счётчиков и расчёта коммунальных платежей">
+    <meta name="theme-color" content="#102a43">
     <title>{% block title %}ЖКУ-Учёт{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
     {% block head %}{% endblock %}
 </head>
@@ -30,6 +33,7 @@
                 {% if current_user.is_owner %}
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('main.add_property') }}"><i class="bi bi-building-add me-1"></i>Объект</a></li>
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('main.tenants') }}"><i class="bi bi-people me-1"></i>Арендаторы</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('main.audit') }}"><i class="bi bi-journal-text me-1"></i>Журнал</a></li>
                 {% else %}
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('main.join_property') }}"><i class="bi bi-box-arrow-in-right me-1"></i>Присоединиться</a></li>
                 {% endif %}
@@ -47,6 +51,9 @@
                     <ul class="dropdown-menu dropdown-menu-end shadow">
                         <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}"><i class="bi bi-person me-2"></i>Профиль</a></li>
                         <li><a class="dropdown-item" href="{{ url_for('auth.change_password') }}"><i class="bi bi-key me-2"></i>Сменить пароль</a></li>
+                        {% if current_user.is_owner %}
+                        <li><a class="dropdown-item" href="{{ url_for('main.archived_properties') }}"><i class="bi bi-archive me-2"></i>Архив объектов</a></li>
+                        {% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li>
                             <form method="post" action="{{ url_for('auth.logout') }}" class="px-2">
@@ -86,12 +93,19 @@
 
 <footer class="app-footer">
     <div class="container d-flex flex-column flex-md-row justify-content-between gap-2">
-        <span>ЖКУ-Учёт — учебный проект, 2026</span>
-        <span>Flask · SQLite · Bootstrap 5</span>
+        <span>ЖКУ-Учёт — учебный проект, {{ current_year }}</span>
+        <span>Flask · SQLite · Bootstrap 5 · v{{ app_version }}</span>
     </div>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+}
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

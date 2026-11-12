@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from app import create_app
 from extensions import get_db

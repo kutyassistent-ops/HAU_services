@@ -2,21 +2,54 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
 
-from flask import (Blueprint, flash, redirect, render_template, request,
-                   url_for)
-from flask_login import (current_user, login_required, login_user,
-                         logout_user)
+from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
+from flask_login import current_user, login_required, login_user, logout_user
 
 from extensions import get_db
-from models import (User, check_password, hash_password, join_by_invite,
-                    log_audit)
+from models import (
+    User,
+    check_password,
+    generate_api_token,
+    hash_password,
+    join_by_invite,
+    log_audit,
+    revoke_api_token,
+)
 from utils import is_safe_url
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+_login_attempts: dict[str, list[float]] = {}
+_login_lock = threading.Lock()
+
+
+def _login_key(username: str) -> str:
+    return f"{request.remote_addr or 'unknown'}:{(username or '').lower()}"
+
+
+def _is_login_locked(key: str) -> bool:
+    window = int(current_app.config.get("LOGIN_LOCKOUT_SECONDS", 300))
+    now = time.monotonic()
+    with _login_lock:
+        attempts = [stamp for stamp in _login_attempts.get(key, []) if now - stamp < window]
+        _login_attempts[key] = attempts
+        return len(attempts) >= int(current_app.config.get("MAX_LOGIN_ATTEMPTS", 5))
+
+
+def _record_login_failure(key: str) -> None:
+    with _login_lock:
+        _login_attempts.setdefault(key, []).append(time.monotonic())
+
+
+def _clear_login_failures(key: str) -> None:
+    with _login_lock:
+        _login_attempts.pop(key, None)
 
 
 def _validate_registration(username: str, password: str, password2: str,
@@ -98,6 +131,14 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         remember = request.form.get("remember") == "on"
+        key = _login_key(username)
+        if _is_login_locked(key):
+            flash(
+                "Слишком много неудачных попыток входа. "
+                "Подождите несколько минут и попробуйте снова.",
+                "danger",
+            )
+            return render_template("login.html", username=username), 429
         row = get_db().execute(
             """
             SELECT id, username, password_hash, role, full_name, email, created_at
@@ -106,6 +147,8 @@ def login():
             (username,),
         ).fetchone()
         if row and check_password(password, row["password_hash"]):
+            _clear_login_failures(key)
+            session.clear()
             login_user(User(row), remember=remember)
             log_audit("user.login", "user", row["id"], None, row["id"])
             get_db().commit()
@@ -114,6 +157,7 @@ def login():
             if is_safe_url(next_url):
                 return redirect(next_url)
             return redirect(url_for("main.dashboard"))
+        _record_login_failure(key)
         flash("Неверное имя пользователя или пароль.", "danger")
         return render_template("login.html", username=username), 401
 
@@ -151,7 +195,28 @@ def profile():
         db.commit()
         flash("Профиль обновлён.", "success")
         return redirect(url_for("auth.profile"))
-    return render_template("profile.html")
+    row = get_db().execute(
+        "SELECT api_token FROM users WHERE id = ?", (current_user.id,)
+    ).fetchone()
+    return render_template("profile.html", api_token=row["api_token"] if row else None)
+
+
+@auth_bp.route("/api-token", methods=["POST"])
+@login_required
+def create_api_token():
+    generate_api_token(current_user.id)
+    get_db().commit()
+    flash("Новый API-токен выпущен. Старый токен перестал действовать.", "success")
+    return redirect(url_for("auth.profile"))
+
+
+@auth_bp.route("/api-token/revoke", methods=["POST"])
+@login_required
+def delete_api_token():
+    revoke_api_token(current_user.id)
+    get_db().commit()
+    flash("API-токен отозван.", "info")
+    return redirect(url_for("auth.profile"))
 
 
 @auth_bp.route("/password", methods=["GET", "POST"])

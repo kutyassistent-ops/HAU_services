@@ -1,0 +1,48 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning:flask.*",
+]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "scripts/*",
+    "seed_demo.py",
+    "coverage_html/*",
+    "instance/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "instance",
+    "coverage_html",
+    "static/vendor",
+    "docs/screenshots",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "C4", "SIM", "ARG"]
+ignore = ["E501", "ARG001", "ARG002", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"migrations.py" = ["ARG001"]
+"tests/*" = ["ARG001", "ARG002"]

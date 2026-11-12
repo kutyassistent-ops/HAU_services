@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Архив объектов — ЖКУ-Учёт{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="h3">Архив объектов</h1>
+        <p class="page-subtitle">Архивные объекты не показываются на дашборде, но история и счета сохранены</p>
+    </div>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+</div>
+
+{% if properties %}
+<div class="row g-3">
+    {% for p in properties %}
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                        <div class="property-address"><i class="bi bi-geo-alt me-1"></i>{{ p.address }}</div>
+                        <div class="small text-muted mt-1">Архивирован: {{ p.archived_at[:16] }}</div>
+                    </div>
+                    <span class="badge bg-secondary">В архиве</span>
+                </div>
+                <hr>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('main.history', property_id=p.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-clock-history me-1"></i>История</a>
+                    <a href="{{ url_for('main.property_tariffs', property_id=p.id) }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-cash-coin me-1"></i>Тарифы</a>
+                    <form method="post" action="{{ url_for('main.unarchive_property_route', property_id=p.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-arrow-counterclockwise me-1"></i>Восстановить</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body empty-state">
+        <i class="bi bi-archive"></i>
+        <h3 class="h5 mt-3">Архив пуст</h3>
+        <p class="mb-0">Архивируйте объект на дашборде, чтобы убрать его из активных без потери данных.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

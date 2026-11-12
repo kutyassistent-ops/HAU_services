@@ -14,6 +14,7 @@ def _add_reading(app, property_id, user_id, d, hot, cold, el):
         db.commit()
         from models import recalculate_property_invoices
         recalculate_property_invoices(property_id, user_id)
+        db.commit()
 
 
 def test_stats_page_renders(client):
